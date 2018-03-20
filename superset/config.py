@@ -400,7 +400,7 @@ DB_CONNECTION_MUTATOR = None
 # The use case is can be around adding some sort of comment header
 # with information such as the username and worker node information
 #
-#    def SQL_QUERY_MUTATOR(sql, username, security_manager):
+#    def SQL_QUERY_MUTATOR(sql, username, security_manager, database):
 #        dttm = datetime.now().isoformat()
 #        return "-- [SQL LAB] {username} {dttm}\n sql"(**locals())
 SQL_QUERY_MUTATOR = None

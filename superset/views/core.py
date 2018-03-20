@@ -2447,7 +2447,8 @@ class Superset(BaseSupersetView):
                 # pylint: disable=no-value-for-parameter
                 data = sql_lab.get_sql_results(
                     query_id=query_id, return_results=True,
-                    template_params=template_params)
+                    template_params=template_params,
+                    user_name=g.user.username)
             payload = json.dumps(
                 data, default=utils.pessimistic_json_iso_dttm_ser)
         except Exception as e:
