@@ -183,6 +183,17 @@ class DashboardFilter(SupersetFilter):
         return query
 
 
+class DatabaseAsyncFilter(SupersetFilter):
+
+    """List datasources for which users have explicitly been granted access"""
+
+    def apply(self, query, func):  # noqa
+        if self.has_role('Admin'):
+            return query
+        perms = self.get_view_menus('datasource_access')
+        return query.filter(self.model.perm.in_(perms))
+
+
 class DatabaseView(SupersetModelView, DeleteMixin, YamlExportMixin):  # noqa
     datamodel = SQLAInterface(models.Database)
 
@@ -324,6 +335,7 @@ class DatabaseAsync(DatabaseView):
         'allow_run_async', 'allow_run_sync', 'allow_dml',
         'allow_multi_schema_metadata_fetch',
     ]
+    base_filters = [['id', DatabaseAsyncFilter, lambda: []]]
 
 
 appbuilder.add_view_no_menu(DatabaseAsync)
