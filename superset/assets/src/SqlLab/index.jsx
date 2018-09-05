@@ -5,6 +5,7 @@ import { Provider } from 'react-redux';
 import thunkMiddleware from 'redux-thunk';
 
 import { getInitialState, sqlLabReducer } from './reducers';
+import { setDefaultDbId } from './actions';
 import { initEnhancer } from '../reduxUtils';
 import { initJQueryAjax } from '../modules/utils';
 import App from './components/App';
@@ -23,6 +24,10 @@ const state = Object.assign({}, getInitialState(bootstrapData.defaultDbId), boot
 
 const store = createStore(
   sqlLabReducer, state, compose(applyMiddleware(thunkMiddleware), initEnhancer()));
+
+// Now that the defaultDBid can change depending on access permissions
+// we want to always update it to latest value in bootstrapData
+store.dispatch(setDefaultDbId(bootstrapData.defaultDbId))
 
 // jquery hack to highlight the navbar menu
 $('a:contains("SQL Lab")').parent().addClass('active');

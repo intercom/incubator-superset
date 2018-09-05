@@ -2692,8 +2692,23 @@ class Superset(BaseSupersetView):
     @expose('/sqllab')
     def sqllab(self):
         """SQL Editor"""
+        default_db_id = config.get('SQLLAB_DEFAULT_DBID')
+
+        # Check the fallback list and select the first db that
+        # the user has access to
+        for db_id in config.get('SQLLAB_DEFAULT_DBID_FALLBACK', []):
+            database = (
+                db.session
+                .query(models.Database)
+                .filter_by(id=db_id)
+                .one()
+            )
+            if security_manager.database_access(database):
+                default_db_id = db_id
+                break
+
         d = {
-            'defaultDbId': config.get('SQLLAB_DEFAULT_DBID'),
+            'defaultDbId': int(default_db_id),
             'common': self.common_bootsrap_payload(),
         }
         return self.render_template(

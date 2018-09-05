@@ -26,6 +26,7 @@ export const QUERY_EDITOR_SET_SELECTED_TEXT = 'QUERY_EDITOR_SET_SELECTED_TEXT';
 export const QUERY_EDITOR_PERSIST_HEIGHT = 'QUERY_EDITOR_PERSIST_HEIGHT';
 
 export const SET_DATABASES = 'SET_DATABASES';
+export const SET_DEFAULT_DB_ID = 'SET_DEFAULT_DB_ID';
 export const SET_ACTIVE_QUERY_EDITOR = 'SET_ACTIVE_QUERY_EDITOR';
 export const SET_ACTIVE_SOUTHPANE_TAB = 'SET_ACTIVE_SOUTHPANE_TAB';
 export const ADD_ALERT = 'ADD_ALERT';
@@ -194,6 +195,10 @@ export function postStopQuery(query) {
 
 export function setDatabases(databases) {
   return { type: SET_DATABASES, databases };
+}
+
+export function setDefaultDbId(db_id) {
+  return { type: SET_DEFAULT_DB_ID, db_id };
 }
 
 export function addQueryEditor(queryEditor) {
