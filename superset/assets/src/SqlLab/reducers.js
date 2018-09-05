@@ -230,6 +230,9 @@ export const sqlLabReducer = function (state, action) {
       });
       return Object.assign({}, state, { databases });
     },
+    [actions.SET_DEFAULT_DB_ID]() {
+      return Object.assign({}, state, { defaultDbId: action.db_id });
+    },
     [actions.REMOVE_ALERT]() {
       return removeFromArr(state, 'alerts', action.alert);
     },
