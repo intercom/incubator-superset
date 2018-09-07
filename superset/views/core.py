@@ -2022,14 +2022,16 @@ class Superset(BaseSupersetView):
         return json_success(json.dumps({'count': count}))
 
     @api
-    @has_access_api
     @expose('/save_query/', methods=['POST'])
     def save_query(self):
         """Save SQL Lab query"""
         data = json.loads(request.form.get('data'))
         session = db.session()
-        # check for an existing query with the same label
-        saved_query = session.query(SavedQuery).filter_by(label=data['label'], user_id=g.user.get_id()).order_by(SavedQuery.changed_on.desc()).first()
+        saved_query = None
+        if data['label'].startswith('*'):
+            # check for an existing query with the same label
+            saved_query = session.query(SavedQuery).filter_by(label=data['label'], user_id=g.user.get_id()).order_by(SavedQuery.changed_on.desc()).first()
+
         if saved_query:
             # update existing query
             saved_query.db_id = data.get('db_id')
@@ -2037,7 +2039,7 @@ class Superset(BaseSupersetView):
             saved_query.description = data.get('description')
             saved_query.sql = data.get('sql')
             session.commit()
-            message = 'Edited Row {0}'.format(savedQuery.id)
+            message = 'Edited Row {0}'.format(saved_query.id)
         else:
             # save as a new query
             saved_query = SavedQuery(
@@ -2050,7 +2052,7 @@ class Superset(BaseSupersetView):
             session.add(saved_query)
             session.flush()
             db.session.commit()
-            message = 'Added Row {0}'.format(savedQuery.id)
+            message = 'Added Row {0}'.format(saved_query.id)
 
         json_result = {
             'item': {
