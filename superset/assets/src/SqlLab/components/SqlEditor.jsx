@@ -226,6 +226,7 @@ class SqlEditor extends React.PureComponent {
                 onSave={this.props.actions.saveQuery}
                 schema={qe.schema}
                 dbId={qe.dbId}
+                queryEditor={qe}
               />
             </span>
             <span className="m-r-5">

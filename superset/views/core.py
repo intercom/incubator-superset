@@ -44,7 +44,7 @@ from superset.forms import CsvToDatabaseForm
 from superset.jinja_context import get_template_processor
 from superset.legacy import cast_form_data
 import superset.models.core as models
-from superset.models.sql_lab import Query
+from superset.models.sql_lab import Query, SavedQuery
 from superset.sql_parse import SupersetQuery
 from superset.utils import (
     merge_extra_filters, merge_request_params, QueryStatus,
@@ -2021,6 +2021,52 @@ class Superset(BaseSupersetView):
         session.commit()
         return json_success(json.dumps({'count': count}))
 
+    @api
+    @has_access_api
+    @expose('/save_query/', methods=['POST'])
+    def save_query(self):
+        """Save SQL Lab query"""
+        data = json.loads(request.form.get('data'))
+        session = db.session()
+        # check for an existing query with the same label
+        saved_query = session.query(SavedQuery).filter_by(label=data['label'], user_id=g.user.get_id()).order_by(SavedQuery.changed_on.desc()).first()
+        if saved_query:
+            # update existing query
+            saved_query.db_id = data.get('db_id')
+            saved_query.schema = data.get('schema')
+            saved_query.description = data.get('description')
+            saved_query.sql = data.get('sql')
+            session.commit()
+            message = 'Edited Row {0}'.format(savedQuery.id)
+        else:
+            # save as a new query
+            saved_query = SavedQuery(
+                user_id=int(g.user.get_id()),
+                label=data.get('label'),
+                db_id=int(data.get('db_id')),
+                schema=data.get('schema'),
+                description=data.get('description'),
+                sql=data.get('sql'))
+            session.add(saved_query)
+            session.flush()
+            db.session.commit()
+            message = 'Added Row {0}'.format(savedQuery.id)
+
+        json_result = {
+            'item': {
+                'db_id': saved_query.db_id,
+                'schema': saved_query.schema,
+                'label': saved_query.label,
+                'description': saved_query.description,
+                'sql': saved_query.sql,
+                'id': saved_query.id
+            },
+            'message': 'Edited Row',
+            'severity': 'success'
+        }
+        session.close()
+        return json_success(json.dumps(json_result))
+
     @has_access
     @expose('/dashboard/<dashboard_id>/')
     def dashboard(self, dashboard_id):
@@ -2415,7 +2461,7 @@ class Superset(BaseSupersetView):
         session.commit()  # shouldn't be necessary
         if not query_id:
             raise Exception(_('Query record was not created as expected.'))
-        logging.info('Triggering query_id: {}'.format(query_id))
+        logging.info('Triggering query: {}'.format(query.to_dict()))
 
         try:
             template_processor = get_template_processor(
@@ -2468,7 +2514,8 @@ class Superset(BaseSupersetView):
                 data = sql_lab.get_sql_results(
                     query_id,
                     rendered_query,
-                    return_results=True)
+                    return_results=True,
+                    user_name=g.user.username)
             payload = json.dumps(
                 data, default=utils.pessimistic_json_iso_dttm_ser, ignore_nan=True)
         except Exception as e:

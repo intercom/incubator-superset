@@ -52,16 +52,22 @@ export function resetState() {
 }
 
 export function saveQuery(query) {
-  const url = '/savedqueryviewapi/api/create';
-  $.ajax({
-    type: 'POST',
-    url,
-    data: query,
-    success: () => notify.success(t('Your query was saved')),
-    error: () => notify.error(t('Your query could not be saved')),
-    dataType: 'json',
-  });
-  return { type: SAVE_QUERY };
+  return function (dispatch) {
+    const url = '/superset/save_query/';
+    $.ajax({
+      type: 'POST',
+      url,
+      data: {
+        data: JSON.stringify(query)
+      },
+      success: ((data) => {
+        dispatch(queryEditorSetTitle(query.queryEditor, query.label));
+        notify.success(t('Your query was saved'))
+      }),
+      error: () => notify.error(t('Your query could not be saved')),
+      dataType: 'json',
+    });
+  };
 }
 
 export function startQuery(query) {
