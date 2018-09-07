@@ -2028,6 +2028,8 @@ class Superset(BaseSupersetView):
         data = json.loads(request.form.get('data'))
         session = db.session()
         saved_query = None
+
+        # special case for queries with a label starting with *
         if data['label'].startswith('*'):
             # check for an existing query with the same label
             saved_query = session.query(SavedQuery).filter_by(label=data['label'], user_id=g.user.get_id()).order_by(SavedQuery.changed_on.desc()).first()
@@ -2463,7 +2465,7 @@ class Superset(BaseSupersetView):
         session.commit()  # shouldn't be necessary
         if not query_id:
             raise Exception(_('Query record was not created as expected.'))
-        logging.info('Triggering query: {}'.format(query.to_dict()))
+        logging.info('Triggering query_id: {}'.format(query_id))
 
         try:
             template_processor = get_template_processor(
@@ -2516,8 +2518,7 @@ class Superset(BaseSupersetView):
                 data = sql_lab.get_sql_results(
                     query_id,
                     rendered_query,
-                    return_results=True,
-                    user_name=g.user.username)
+                    return_results=True)
             payload = json.dumps(
                 data, default=utils.pessimistic_json_iso_dttm_ser, ignore_nan=True)
         except Exception as e:
