@@ -2872,16 +2872,27 @@ class Superset(BaseSupersetView):
 
         # Check the fallback list and select the first db that
         # the user has access to
-        for db_id in config.get('SQLLAB_DEFAULT_DBID_FALLBACK', []):
-            database = (
+        for db_id in config.get('SQLLAB_DEFAULT_DBID_FALLBACK', [config.get('SQLLAB_DEFAULT_DBID')]):
+            default_db = (
                 db.session
                 .query(models.Database)
                 .filter_by(id=db_id)
-                .one()
+                .first()
             )
-            if security_manager.database_access(database):
+            if security_manager.database_access(default_db):
                 default_db_id = db_id
                 break
+
+        if not default_db_id:
+            databases = (
+                db.session
+                .query(models.Database)
+                .all()
+            )
+            for database in databases:
+                if security_manager.database_access(db.id):
+                    default_db_id = db.id
+                    break
 
         d = {
             'defaultDbId': int(default_db_id),
