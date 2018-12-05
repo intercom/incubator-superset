@@ -1,7 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import moment from 'moment';
-import TableLoader from './TableLoader';
+import TableLoader from '../../components/TableLoader';
 import { t } from '../../locales';
 
 const propTypes = {
@@ -30,7 +30,7 @@ class CreatedContent extends React.PureComponent {
         className="table table-condensed"
         columns={['slice', 'favorited']}
         mutator={mutator}
-        noDataText={t('No slices')}
+        noDataText={t('No charts')}
         sortable
       />
     );
@@ -58,7 +58,7 @@ class CreatedContent extends React.PureComponent {
         <h3>{t('Dashboards')}</h3>
         {this.renderDashboardTable()}
         <hr />
-        <h3>{t('Slices')}</h3>
+        <h3>{t('Charts')}</h3>
         {this.renderSliceTable()}
       </div>
     );

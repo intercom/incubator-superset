@@ -1,26 +1,31 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import SyntaxHighlighter, { registerLanguage } from 'react-syntax-highlighter/dist/light';
-import html from 'react-syntax-highlighter/dist/languages/htmlbars';
-import markdown from 'react-syntax-highlighter/dist/languages/markdown';
-import sql from 'react-syntax-highlighter/dist/languages/sql';
-import json from 'react-syntax-highlighter/dist/languages/json';
-import github from 'react-syntax-highlighter/dist/styles/github';
+import html from 'react-syntax-highlighter/languages/hljs/htmlbars';
+import markdown from 'react-syntax-highlighter/languages/hljs/markdown';
+import sql from 'react-syntax-highlighter/languages/hljs/sql';
+import json from 'react-syntax-highlighter/languages/hljs/json';
+import github from 'react-syntax-highlighter/styles/hljs/github';
+import { DropdownButton, MenuItem, Row, Col, FormControl } from 'react-bootstrap';
+import { Table } from 'reactable';
+import $ from 'jquery';
+
 import CopyToClipboard from './../../components/CopyToClipboard';
 import { getExploreUrlAndPayload } from '../exploreUtils';
 
+import Loading from '../../components/Loading';
 import ModalTrigger from './../../components/ModalTrigger';
 import Button from '../../components/Button';
 import { t } from '../../locales';
+import RowCountLabel from './RowCountLabel';
 
 registerLanguage('markdown', markdown);
 registerLanguage('html', html);
 registerLanguage('sql', sql);
 registerLanguage('json', json);
 
-const $ = window.$ = require('jquery');
-
 const propTypes = {
+  onOpenInEditor: PropTypes.func,
   animation: PropTypes.bool,
   queryResponse: PropTypes.object,
   chartStatus: PropTypes.string,
@@ -33,28 +38,24 @@ const defaultProps = {
 export default class DisplayQueryButton extends React.PureComponent {
   constructor(props) {
     super(props);
+    const { datasource } = props.latestQueryFormData;
     this.state = {
       language: null,
       query: null,
+      data: null,
       isLoading: false,
       error: null,
+      filterText: '',
+      sqlSupported: datasource && datasource.split('__')[1] === 'table',
     };
     this.beforeOpen = this.beforeOpen.bind(this);
-    this.fetchQuery = this.fetchQuery.bind(this);
+    this.changeFilterText = this.changeFilterText.bind(this);
   }
-  setStateFromQueryResponse() {
-    const qr = this.props.queryResponse;
-    this.setState({
-      language: qr.language,
-      query: qr.query,
-      isLoading: false,
-    });
-  }
-  fetchQuery() {
+  beforeOpen(endpointType) {
     this.setState({ isLoading: true });
     const { url, payload } = getExploreUrlAndPayload({
       formData: this.props.latestQueryFormData,
-      endpointType: 'query',
+      endpointType,
     });
     $.ajax({
       type: 'POST',
@@ -66,6 +67,7 @@ export default class DisplayQueryButton extends React.PureComponent {
         this.setState({
           language: data.language,
           query: data.query,
+          data: data.data,
           isLoading: false,
           error: null,
         });
@@ -78,23 +80,15 @@ export default class DisplayQueryButton extends React.PureComponent {
       },
     });
   }
-  beforeOpen() {
-    if (
-      ['loading', null].indexOf(this.props.chartStatus) >= 0
-      || !this.props.queryResponse || !this.props.queryResponse.query
-    ) {
-      this.fetchQuery();
-    } else {
-      this.setStateFromQueryResponse();
-    }
+  changeFilterText(event) {
+    this.setState({ filterText: event.target.value });
   }
-  renderModalBody() {
+  redirectSQLLab() {
+    this.props.onOpenInEditor(this.props.latestQueryFormData);
+  }
+  renderQueryModalBody() {
     if (this.state.isLoading) {
-      return (<img
-        className="loading"
-        alt="Loading..."
-        src="/static/assets/images/loading.gif"
-      />);
+      return <Loading />;
     } else if (this.state.error) {
       return <pre>{this.state.error}</pre>;
     } else if (this.state.query) {
@@ -117,17 +111,115 @@ export default class DisplayQueryButton extends React.PureComponent {
     }
     return null;
   }
+  renderResultsModalBody() {
+    if (this.state.isLoading) {
+      return (<img
+        className="loading"
+        alt={t('Loading...')}
+        src="/static/assets/images/loading.gif"
+      />);
+    } else if (this.state.error) {
+      return <pre>{this.state.error}</pre>;
+    } else if (this.state.data) {
+      if (this.state.data.length === 0) {
+        return 'No data';
+      }
+      return this.renderDataTable(this.state.data);
+    }
+    return null;
+  }
+  renderDataTable(data) {
+    return (
+      <div style={{ overflow: 'auto' }}>
+        <Row>
+          <Col md={9}>
+            <RowCountLabel rowcount={data.length} suffix={t('rows retrieved')} />
+          </Col>
+          <Col md={3}>
+            <FormControl
+              placeholder={t('Search')}
+              bsSize="sm"
+              value={this.state.filterText}
+              onChange={this.changeFilterText}
+              style={{ paddingBottom: '5px' }}
+            />
+          </Col>
+        </Row>
+        <Table
+          className="table table-condensed"
+          sortable
+          data={data}
+          hideFilterInput
+          filterBy={this.state.filterText}
+          filterable={data.length ? Object.keys(data[0]) : null}
+          noDataText={t('No data')}
+        />
+      </div>
+    );
+  }
+  renderSamplesModalBody() {
+    if (this.state.isLoading) {
+      return (<img
+        className="loading"
+        alt="Loading..."
+        src="/static/assets/images/loading.gif"
+      />);
+    } else if (this.state.error) {
+      return <pre>{this.state.error}</pre>;
+    } else if (this.state.data) {
+      return this.renderDataTable(this.state.data);
+    }
+    return null;
+  }
   render() {
     return (
-      <ModalTrigger
-        animation={this.props.animation}
-        isButton
-        triggerNode={<span>View Query</span>}
-        modalTitle={t('Query')}
-        bsSize="large"
-        beforeOpen={this.beforeOpen}
-        modalBody={this.renderModalBody()}
-      />
+      <DropdownButton
+        noCaret
+        title={
+          <span>
+            <i className="fa fa-bars" />&nbsp;
+          </span>}
+        bsSize="sm"
+        pullRight
+        id="query"
+      >
+        <ModalTrigger
+          isMenuItem
+          animation={this.props.animation}
+          triggerNode={<span>{t('View query')}</span>}
+          modalTitle={t('View query')}
+          bsSize="large"
+          beforeOpen={() => this.beforeOpen('query')}
+          modalBody={this.renderQueryModalBody()}
+          eventKey="1"
+        />
+        <ModalTrigger
+          isMenuItem
+          animation={this.props.animation}
+          triggerNode={<span>{t('View results')}</span>}
+          modalTitle={t('View results')}
+          bsSize="large"
+          beforeOpen={() => this.beforeOpen('results')}
+          modalBody={this.renderResultsModalBody()}
+          eventKey="2"
+        />
+        <ModalTrigger
+          isMenuItem
+          animation={this.props.animation}
+          triggerNode={<span>{t('View samples')}</span>}
+          modalTitle={t('View samples')}
+          bsSize="large"
+          beforeOpen={() => this.beforeOpen('samples')}
+          modalBody={this.renderSamplesModalBody()}
+          eventKey="2"
+        />
+        {this.state.sqlSupported && <MenuItem
+          eventKey="3"
+          onClick={this.redirectSQLLab.bind(this)}
+        >
+          {t('Run in SQL Lab')}
+        </MenuItem>}
+      </DropdownButton>
     );
   }
 }

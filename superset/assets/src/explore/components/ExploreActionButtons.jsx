@@ -1,13 +1,14 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import cx from 'classnames';
-import URLShortLinkButton from './URLShortLinkButton';
+import URLShortLinkButton from '../../components/URLShortLinkButton';
 import EmbedCodeButton from './EmbedCodeButton';
 import DisplayQueryButton from './DisplayQueryButton';
 import { t } from '../../locales';
-import { exportChart } from '../exploreUtils';
+import { exportChart, getExploreLongUrl } from '../exploreUtils';
 
 const propTypes = {
+  actions: PropTypes.object.isRequired,
   canDownload: PropTypes.oneOfType([PropTypes.string, PropTypes.bool]).isRequired,
   chartStatus: PropTypes.string,
   latestQueryFormData: PropTypes.object,
@@ -15,7 +16,7 @@ const propTypes = {
 };
 
 export default function ExploreActionButtons({
-    canDownload, chartStatus, latestQueryFormData, queryResponse }) {
+    actions, canDownload, chartStatus, latestQueryFormData, queryResponse }) {
   const exportToCSVClasses = cx('btn btn-default btn-sm', {
     'disabled disabledButton': !canDownload,
   });
@@ -25,7 +26,12 @@ export default function ExploreActionButtons({
   return (
     <div className="btn-group results" role="group">
       {latestQueryFormData &&
-        <URLShortLinkButton latestQueryFormData={latestQueryFormData} />}
+        <URLShortLinkButton
+          url={getExploreLongUrl(latestQueryFormData)}
+          emailSubject="Superset Chart"
+          emailContent="Check out this chart: "
+        />
+      }
 
       {latestQueryFormData &&
         <EmbedCodeButton latestQueryFormData={latestQueryFormData} />}
@@ -54,6 +60,7 @@ export default function ExploreActionButtons({
         queryResponse={queryResponse}
         latestQueryFormData={latestQueryFormData}
         chartStatus={chartStatus}
+        onOpenInEditor={actions.redirectSQLLab}
       />
     </div>
   );

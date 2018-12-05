@@ -3,7 +3,7 @@ import URI from 'urijs';
 
 export function getChartKey(explore) {
   const slice = explore.slice;
-  return slice ? ('slice_' + slice.slice_id) : 'slice';
+  return slice ? (slice.slice_id) : 0;
 }
 
 export function getAnnotationJsonUrl(slice_id, form_data, isNative) {
@@ -22,7 +22,7 @@ export function getAnnotationJsonUrl(slice_id, form_data, isNative) {
 export function getURIDirectory(formData, endpointType = 'base') {
   // Building the directory part of the URI
   let directory = '/superset/explore/';
-  if (['json', 'csv', 'query'].indexOf(endpointType) >= 0) {
+  if (['json', 'csv', 'query', 'results', 'samples'].indexOf(endpointType) >= 0) {
     directory = '/superset/explore_json/';
   }
   return directory;
@@ -80,6 +80,12 @@ export function getExploreUrlAndPayload({
   }
   if (endpointType === 'query') {
     search.query = 'true';
+  }
+  if (endpointType === 'results') {
+    search.results = 'true';
+  }
+  if (endpointType === 'samples') {
+    search.samples = 'true';
   }
   const paramNames = Object.keys(requestParams);
   if (paramNames.length) {

@@ -1,11 +1,6 @@
-# -*- coding: utf-8 -*-
 # pylint: disable=C,R,W
 """A collection of ORM sqlalchemy models for Superset"""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
-
+from contextlib import closing
 from copy import copy, deepcopy
 from datetime import datetime
 import functools
@@ -16,27 +11,30 @@ import textwrap
 from flask import escape, g, Markup, request
 from flask_appbuilder import Model
 from flask_appbuilder.models.decorators import renders
+from flask_appbuilder.security.sqla.models import User
 from future.standard_library import install_aliases
 import numpy
 import pandas as pd
 import sqlalchemy as sqla
 from sqlalchemy import (
     Boolean, Column, create_engine, DateTime, ForeignKey, Integer,
-    MetaData, select, String, Table, Text,
+    MetaData, String, Table, Text,
 )
 from sqlalchemy.engine import url
 from sqlalchemy.engine.url import make_url
-from sqlalchemy.orm import relationship, subqueryload
+from sqlalchemy.orm import relationship, sessionmaker, subqueryload
 from sqlalchemy.orm.session import make_transient
 from sqlalchemy.pool import NullPool
 from sqlalchemy.schema import UniqueConstraint
-from sqlalchemy.sql import text
-from sqlalchemy.sql.expression import TextAsFrom
 from sqlalchemy_utils import EncryptedType
+import sqlparse
 
 from superset import app, db, db_engine_specs, security_manager, utils
 from superset.connectors.connector_registry import ConnectorRegistry
-from superset.models.helpers import AuditMixinNullable, ImportMixin, set_perm
+from superset.legacy import update_time_range
+from superset.models.helpers import AuditMixinNullable, ImportMixin
+from superset.models.user_attributes import UserAttribute
+from superset.utils import MediumText
 from superset.viz import viz_types
 install_aliases()
 from urllib import parse  # noqa
@@ -55,6 +53,41 @@ def set_related_perm(mapper, connection, target):  # noqa
         ds = db.session.query(src_class).filter_by(id=int(id_)).first()
         if ds:
             target.perm = ds.perm
+
+
+def copy_dashboard(mapper, connection, target):
+    dashboard_id = config.get('DASHBOARD_TEMPLATE_ID')
+    if dashboard_id is None:
+        return
+
+    Session = sessionmaker(autoflush=False)
+    session = Session(bind=connection)
+    new_user = session.query(User).filter_by(id=target.id).first()
+
+    # copy template dashboard to user
+    template = session.query(Dashboard).filter_by(id=int(dashboard_id)).first()
+    dashboard = Dashboard(
+        dashboard_title=template.dashboard_title,
+        position_json=template.position_json,
+        description=template.description,
+        css=template.css,
+        json_metadata=template.json_metadata,
+        slices=template.slices,
+        owners=[new_user],
+    )
+    session.add(dashboard)
+    session.commit()
+
+    # set dashboard as the welcome dashboard
+    extra_attributes = UserAttribute(
+        user_id=target.id,
+        welcome_dashboard_id=dashboard.id,
+    )
+    session.add(extra_attributes)
+    session.commit()
+
+
+sqla.event.listen(User, 'after_insert', copy_dashboard)
 
 
 class Url(Model, AuditMixinNullable):
@@ -147,6 +180,11 @@ class Slice(Model, AuditMixinNullable, ImportMixin):
         datasource = self.datasource
         return datasource.link if datasource else None
 
+    def datasource_name_text(self):
+        # pylint: disable=no-member
+        datasource = self.datasource
+        return datasource.name if datasource else None
+
     @property
     def datasource_edit_url(self):
         # pylint: disable=no-member
@@ -185,6 +223,8 @@ class Slice(Model, AuditMixinNullable, ImportMixin):
             'slice_id': self.id,
             'slice_name': self.slice_name,
             'slice_url': self.slice_url,
+            'modified': self.modified(),
+            'changed_on': self.changed_on.isoformat(),
         }
 
     @property
@@ -205,8 +245,10 @@ class Slice(Model, AuditMixinNullable, ImportMixin):
             'datasource': '{}__{}'.format(
                 self.datasource_id, self.datasource_type),
         })
+
         if self.cache_timeout:
             form_data['cache_timeout'] = self.cache_timeout
+        update_time_range(form_data)
         return form_data
 
     def get_explore_url(self, base_url='/superset/explore', overrides=None):
@@ -229,7 +271,7 @@ class Slice(Model, AuditMixinNullable, ImportMixin):
 
     @property
     def edit_url(self):
-        return '/slicemodelview/edit/{}'.format(self.id)
+        return '/chart/edit/{}'.format(self.id)
 
     @property
     def slice_link(self):
@@ -316,7 +358,7 @@ class Dashboard(Model, AuditMixinNullable, ImportMixin):
     __tablename__ = 'dashboards'
     id = Column(Integer, primary_key=True)
     dashboard_title = Column(String(500))
-    position_json = Column(Text)
+    position_json = Column(MediumText())
     description = Column(Text)
     css = Column(Text)
     json_metadata = Column(Text)
@@ -343,10 +385,15 @@ class Dashboard(Model, AuditMixinNullable, ImportMixin):
             # add default_filters to the preselect_filters of dashboard
             json_metadata = json.loads(self.json_metadata)
             default_filters = json_metadata.get('default_filters')
-            if default_filters:
-                filters = parse.quote(default_filters.encode('utf8'))
-                return '/superset/dashboard/{}/?preselect_filters={}'.format(
-                    self.slug or self.id, filters)
+            # make sure default_filters is not empty and is valid
+            if default_filters and default_filters != '{}':
+                try:
+                    if json.loads(default_filters):
+                        filters = parse.quote(default_filters.encode('utf8'))
+                        return '/superset/dashboard/{}/?preselect_filters={}'.format(
+                            self.slug or self.id, filters)
+                except Exception:
+                    pass
         return '/superset/dashboard/{}/'.format(self.slug or self.id)
 
     @property
@@ -388,10 +435,10 @@ class Dashboard(Model, AuditMixinNullable, ImportMixin):
         self.json_metadata = value
 
     @property
-    def position_array(self):
+    def position(self):
         if self.position_json:
             return json.loads(self.position_json)
-        return []
+        return {}
 
     @classmethod
     def import_obj(cls, dashboard_to_import, import_time=None):
@@ -407,24 +454,43 @@ class Dashboard(Model, AuditMixinNullable, ImportMixin):
         def alter_positions(dashboard, old_to_new_slc_id_dict):
             """ Updates slice_ids in the position json.
 
-            Sample position json:
-            [{
-                "col": 5,
-                "row": 10,
-                "size_x": 4,
-                "size_y": 2,
-                "slice_id": "3610"
-            }]
+            Sample position_json data:
+            {
+                "DASHBOARD_VERSION_KEY": "v2",
+                "DASHBOARD_ROOT_ID": {
+                    "type": "DASHBOARD_ROOT_TYPE",
+                    "id": "DASHBOARD_ROOT_ID",
+                    "children": ["DASHBOARD_GRID_ID"]
+                },
+                "DASHBOARD_GRID_ID": {
+                    "type": "DASHBOARD_GRID_TYPE",
+                    "id": "DASHBOARD_GRID_ID",
+                    "children": ["DASHBOARD_CHART_TYPE-2"]
+                },
+                "DASHBOARD_CHART_TYPE-2": {
+                    "type": "DASHBOARD_CHART_TYPE",
+                    "id": "DASHBOARD_CHART_TYPE-2",
+                    "children": [],
+                    "meta": {
+                        "width": 4,
+                        "height": 50,
+                        "chartId": 118
+                    }
+                },
+            }
             """
-            position_array = dashboard.position_array
-            for position in position_array:
-                if 'slice_id' not in position:
-                    continue
-                old_slice_id = int(position['slice_id'])
-                if old_slice_id in old_to_new_slc_id_dict:
-                    position['slice_id'] = '{}'.format(
-                        old_to_new_slc_id_dict[old_slice_id])
-            dashboard.position_json = json.dumps(position_array)
+            position_data = json.loads(dashboard.position_json)
+            position_json = position_data.values()
+            for value in position_json:
+                if (isinstance(value, dict) and value.get('meta') and
+                        value.get('meta').get('chartId')):
+                    old_slice_id = value.get('meta').get('chartId')
+
+                    if old_slice_id in old_to_new_slc_id_dict:
+                        value['meta']['chartId'] = (
+                            old_to_new_slc_id_dict[old_slice_id]
+                        )
+            dashboard.position_json = json.dumps(position_data)
 
         logging.info('Started import of the dashboard: {}'
                      .format(dashboard_to_import.to_json()))
@@ -565,6 +631,7 @@ class Database(Model, AuditMixinNullable, ImportMixin):
     expose_in_sqllab = Column(Boolean, default=False)
     allow_run_sync = Column(Boolean, default=True)
     allow_run_async = Column(Boolean, default=False)
+    allow_csv_upload = Column(Boolean, default=False)
     allow_ctas = Column(Boolean, default=False)
     allow_dml = Column(Boolean, default=False)
     force_ctas_schema = Column(String(250))
@@ -572,15 +639,16 @@ class Database(Model, AuditMixinNullable, ImportMixin):
     extra = Column(Text, default=textwrap.dedent("""\
     {
         "metadata_params": {},
-        "engine_params": {}
+        "engine_params": {},
+        "metadata_cache_timeout": {},
+        "schemas_allowed_for_csv_upload": []
     }
     """))
     perm = Column(String(1000))
-
     impersonate_user = Column(Boolean, default=False)
     export_fields = ('database_name', 'sqlalchemy_uri', 'cache_timeout',
                      'expose_in_sqllab', 'allow_run_sync', 'allow_run_async',
-                     'allow_ctas', 'extra')
+                     'allow_ctas', 'allow_csv_upload', 'extra')
     export_children = ['tables']
 
     def __repr__(self):
@@ -591,17 +659,27 @@ class Database(Model, AuditMixinNullable, ImportMixin):
         return self.verbose_name if self.verbose_name else self.database_name
 
     @property
+    def allows_subquery(self):
+        return self.db_engine_spec.allows_subquery
+
+    @property
     def data(self):
         return {
+            'id': self.id,
             'name': self.database_name,
             'backend': self.backend,
             'allow_multi_schema_metadata_fetch':
                 self.allow_multi_schema_metadata_fetch,
+            'allows_subquery': self.allows_subquery,
         }
 
     @property
     def unique_name(self):
         return self.database_name
+
+    @property
+    def url_object(self):
+        return make_url(self.sqlalchemy_uri_decrypted)
 
     @property
     def backend(self):
@@ -692,9 +770,8 @@ class Database(Model, AuditMixinNullable, ImportMixin):
         return self.get_dialect().identifier_preparer.quote
 
     def get_df(self, sql, schema):
-        sql = sql.strip().strip(';')
-        eng = self.get_sqla_engine(schema=schema)
-        df = pd.read_sql_query(sql, eng)
+        sqls = [str(s).strip().strip(';') for s in sqlparse.parse(sql)]
+        engine = self.get_sqla_engine(schema=schema)
 
         def needs_conversion(df_series):
             if df_series.empty:
@@ -703,33 +780,57 @@ class Database(Model, AuditMixinNullable, ImportMixin):
                 return True
             return False
 
-        for k, v in df.dtypes.items():
-            if v.type == numpy.object_ and needs_conversion(df[k]):
-                df[k] = df[k].apply(utils.json_dumps_w_dates)
-        return df
+        with closing(engine.raw_connection()) as conn:
+            with closing(conn.cursor()) as cursor:
+                for sql in sqls[:-1]:
+                    self.db_engine_spec.execute(cursor, sql)
+                    cursor.fetchall()
+
+                self.db_engine_spec.execute(cursor, sqls[-1])
+
+                if cursor.description is not None:
+                    columns = [col_desc[0] for col_desc in cursor.description]
+                else:
+                    columns = []
+
+                df = pd.DataFrame.from_records(
+                    data=list(cursor.fetchall()),
+                    columns=columns,
+                    coerce_float=True,
+                )
+
+                for k, v in df.dtypes.items():
+                    if v.type == numpy.object_ and needs_conversion(df[k]):
+                        df[k] = df[k].apply(utils.json_dumps_w_dates)
+                return df
 
     def compile_sqla_query(self, qry, schema=None):
-        eng = self.get_sqla_engine(schema=schema)
-        compiled = qry.compile(eng, compile_kwargs={'literal_binds': True})
-        return '{}'.format(compiled)
+        engine = self.get_sqla_engine(schema=schema)
+
+        sql = str(
+            qry.compile(
+                engine,
+                compile_kwargs={'literal_binds': True},
+            ),
+        )
+
+        if engine.dialect.identifier_preparer._double_percents:
+            sql = sql.replace('%%', '%')
+
+        return sql
 
     def select_star(
             self, table_name, schema=None, limit=100, show_cols=False,
-            indent=True, latest_partition=True, cols=None):
+            indent=True, latest_partition=False, cols=None):
         """Generates a ``select *`` statement in the proper dialect"""
+        eng = self.get_sqla_engine(schema=schema)
         return self.db_engine_spec.select_star(
-            self, table_name, schema=schema, limit=limit, show_cols=show_cols,
+            self, table_name, schema=schema, engine=eng,
+            limit=limit, show_cols=show_cols,
             indent=indent, latest_partition=latest_partition, cols=cols)
 
-    def wrap_sql_limit(self, sql, limit=1000):
-        qry = (
-            select('*')
-            .select_from(
-                TextAsFrom(text(sql), ['*'])
-                .alias('inner_qry'),
-            ).limit(limit)
-        )
-        return self.compile_sqla_query(qry)
+    def apply_limit_to_sql(self, sql, limit=1000):
+        return self.db_engine_spec.apply_limit_to_sql(sql, limit, self)
 
     def safe_sqlalchemy_uri(self):
         return self.sqlalchemy_uri
@@ -763,8 +864,17 @@ class Database(Model, AuditMixinNullable, ImportMixin):
             pass
         return views
 
-    def all_schema_names(self):
-        return sorted(self.db_engine_spec.get_schema_names(self.inspector))
+    def all_schema_names(self, force_refresh=False):
+        extra = self.get_extra()
+        medatada_cache_timeout = extra.get('metadata_cache_timeout', {})
+        schema_cache_timeout = medatada_cache_timeout.get('schema_cache_timeout')
+        enable_cache = 'schema_cache_timeout' in medatada_cache_timeout
+        return sorted(self.db_engine_spec.get_schema_names(
+            inspector=self.inspector,
+            enable_cache=enable_cache,
+            cache_timeout=schema_cache_timeout,
+            db_id=self.id,
+            force=force_refresh))
 
     @property
     def db_engine_spec(self):
@@ -784,7 +894,7 @@ class Database(Model, AuditMixinNullable, ImportMixin):
         each database has slightly different but similar datetime functions,
         this allows a mapping between database engines and actual functions.
         """
-        return self.db_engine_spec.time_grains
+        return self.db_engine_spec.get_time_grains()
 
     def grains_dict(self):
         """Allowing to lookup grain by either label or duration
@@ -801,6 +911,7 @@ class Database(Model, AuditMixinNullable, ImportMixin):
                 extra = json.loads(self.extra)
             except Exception as e:
                 logging.error(e)
+                raise e
         return extra
 
     def get_table(self, table_name, schema=None):
@@ -823,6 +934,9 @@ class Database(Model, AuditMixinNullable, ImportMixin):
 
     def get_foreign_keys(self, table_name, schema=None):
         return self.inspector.get_foreign_keys(table_name, schema)
+
+    def get_schema_access_for_csv_upload(self):
+        return self.get_extra().get('schemas_allowed_for_csv_upload', [])
 
     @property
     def sqlalchemy_uri_decrypted(self):
@@ -852,8 +966,8 @@ class Database(Model, AuditMixinNullable, ImportMixin):
         return sqla_url.get_dialect()()
 
 
-sqla.event.listen(Database, 'after_insert', set_perm)
-sqla.event.listen(Database, 'after_update', set_perm)
+sqla.event.listen(Database, 'after_insert', security_manager.set_perm)
+sqla.event.listen(Database, 'after_update', security_manager.set_perm)
 
 
 class Log(Model):
@@ -879,16 +993,18 @@ class Log(Model):
         """Decorator to log user actions"""
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
-            start_dttm = datetime.now()
             user_id = None
             if g.user:
                 user_id = g.user.get_id()
             d = request.form.to_dict() or {}
+
             # request parameters can overwrite post body
             request_params = request.args.to_dict()
             d.update(request_params)
             d.update(kwargs)
+
             slice_id = d.get('slice_id')
+            dashboard_id = d.get('dashboard_id')
 
             try:
                 slice_id = int(
@@ -896,26 +1012,40 @@ class Log(Model):
             except (ValueError, TypeError):
                 slice_id = 0
 
-            params = ''
-            try:
-                params = json.dumps(d)
-            except Exception:
-                pass
             stats_logger.incr(f.__name__)
+            start_dttm = datetime.now()
             value = f(*args, **kwargs)
+            duration_ms = (datetime.now() - start_dttm).total_seconds() * 1000
+
+            # bulk insert
+            try:
+                explode_by = d.get('explode')
+                records = json.loads(d.get(explode_by))
+            except Exception:
+                records = [d]
+
+            referrer = request.referrer[:1000] if request.referrer else None
+            logs = []
+            for record in records:
+                try:
+                    json_string = json.dumps(record)
+                except Exception:
+                    json_string = None
+                log = cls(
+                    action=f.__name__,
+                    json=json_string,
+                    dashboard_id=dashboard_id,
+                    slice_id=slice_id,
+                    duration_ms=duration_ms,
+                    referrer=referrer,
+                    user_id=user_id)
+                logs.append(log)
+
             sesh = db.session()
-            log = cls(
-                action=f.__name__,
-                json=params,
-                dashboard_id=d.get('dashboard_id'),
-                slice_id=slice_id,
-                duration_ms=(
-                    datetime.now() - start_dttm).total_seconds() * 1000,
-                referrer=request.referrer[:1000] if request.referrer else None,
-                user_id=user_id)
-            sesh.add(log)
+            sesh.bulk_save_objects(logs)
             sesh.commit()
             return value
+
         return wrapper
 
 

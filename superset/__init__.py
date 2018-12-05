@@ -1,11 +1,5 @@
-# -*- coding: utf-8 -*-
 # pylint: disable=C,R,W
 """Package's main module!"""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
-
 import json
 import logging
 from logging.handlers import TimedRotatingFileHandler
@@ -47,23 +41,46 @@ def parse_manifest_json():
     global manifest
     try:
         with open(MANIFEST_FILE, 'r') as f:
-            manifest = json.load(f)
+            # the manifest inclues non-entry files
+            # we only need entries in templates
+            full_manifest = json.load(f)
+            manifest = full_manifest.get('entrypoints', {})
     except Exception:
         pass
 
 
-def get_manifest_file(filename):
+def get_js_manifest_files(filename):
     if app.debug:
         parse_manifest_json()
-    return '/static/assets/dist/' + manifest.get(filename, '')
+    entry_files = manifest.get(filename, {})
+    return entry_files.get('js', [])
+
+
+def get_css_manifest_files(filename):
+    if app.debug:
+        parse_manifest_json()
+    entry_files = manifest.get(filename, {})
+    return entry_files.get('css', [])
+
+
+def get_unloaded_chunks(files, loaded_chunks):
+    filtered_files = [f for f in files if f not in loaded_chunks]
+    for f in filtered_files:
+        loaded_chunks.add(f)
+    return filtered_files
 
 
 parse_manifest_json()
 
 
 @app.context_processor
-def get_js_manifest():
-    return dict(js_manifest=get_manifest_file)
+def get_manifest():
+    return dict(
+        loaded_chunks=set(),
+        get_unloaded_chunks=get_unloaded_chunks,
+        js_manifest=get_js_manifest_files,
+        css_manifest=get_css_manifest_files,
+    )
 
 
 #################################################################

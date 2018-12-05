@@ -7,6 +7,7 @@ import { Modal, Alert, Button, Radio } from 'react-bootstrap';
 import Select from 'react-select';
 import { t } from '../../locales';
 import { supersetURL } from '../../utils/common';
+import { EXPLORE_ONLY_VIZ_TYPE } from '../constants';
 
 const propTypes = {
   can_overwrite: PropTypes.bool,
@@ -31,6 +32,7 @@ class SaveModal extends React.Component {
       alert: null,
       action: props.can_overwrite ? 'overwrite' : 'saveas',
       addToDash: 'noSave',
+      vizType: props.form_data.viz_type,
     };
   }
   componentDidMount() {
@@ -71,7 +73,7 @@ class SaveModal extends React.Component {
     if (sliceParams.action === 'saveas') {
       sliceName = this.state.newSliceName;
       if (sliceName === '') {
-        this.setState({ alert: t('Please enter a slice name') });
+        this.setState({ alert: t('Please enter a chart name') });
         return;
       }
       sliceParams.slice_name = sliceName;
@@ -108,7 +110,7 @@ class SaveModal extends React.Component {
       .then((data) => {
         // Go to new slice url or dashboard url
         if (gotodash) {
-          window.location = supersetURL(data.dashboard, { edit: 'true' });
+          window.location = supersetURL(data.dashboard);
         } else {
           window.location = data.slice.slice_url;
         }
@@ -122,6 +124,7 @@ class SaveModal extends React.Component {
     this.setState({ alert: null });
   }
   render() {
+    const canNotSaveToDash = EXPLORE_ONLY_VIZ_TYPE.indexOf(this.state.vizType) > -1;
     return (
       <Modal
         show
@@ -182,29 +185,35 @@ class SaveModal extends React.Component {
 
           <Radio
             inline
+            disabled={canNotSaveToDash}
             checked={this.state.addToDash === 'existing'}
             onChange={this.changeDash.bind(this, 'existing')}
+            data-test="add-to-existing-dashboard"
           >
             {t('Add chart to existing dashboard')}
           </Radio>
           <Select
             className="save-modal-selector"
+            disabled={canNotSaveToDash}
             options={this.props.dashboards}
             onChange={this.onChange.bind(this, 'saveToDashboardId')}
             autoSize={false}
             value={this.state.saveToDashboardId}
-            placeholder="Select Dashboard"
+            placeholder={t('Select Dashboard')}
           />
 
           <Radio
             inline
             checked={this.state.addToDash === 'new'}
             onChange={this.changeDash.bind(this, 'new')}
+            disabled={canNotSaveToDash}
+            data-test="add-to-new-dashboard"
           >
             {t('Add to new dashboard')} &nbsp;
           </Radio>
           <input
             onChange={this.onChange.bind(this, 'newDashboardName')}
+            disabled={canNotSaveToDash}
             onFocus={this.changeDash.bind(this, 'new')}
             placeholder={t('[dashboard name]')}
           />
@@ -224,7 +233,7 @@ class SaveModal extends React.Component {
             type="button"
             id="btn_modal_save_goto_dash"
             className="btn btn-primary pull-left gotodash"
-            disabled={this.state.addToDash === 'noSave'}
+            disabled={this.state.addToDash === 'noSave' || canNotSaveToDash}
             onClick={this.saveOrOverwrite.bind(this, true)}
           >
             {t('Save & go to dashboard')}

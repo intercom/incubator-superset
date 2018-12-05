@@ -1,34 +1,22 @@
+import { combineReducers } from 'redux';
 import shortid from 'shortid';
+import messageToasts from '../messageToasts/reducers';
+
+import getInitialState from './getInitialState';
 import * as actions from './actions';
 import { now } from '../modules/dates';
-import { addToObject, alterInObject, alterInArr, removeFromArr, getFromArr, addToArr }
-  from '../reduxUtils';
+import {
+  addToObject,
+  alterInObject,
+  alterInArr,
+  removeFromArr,
+  getFromArr,
+  addToArr,
+} from '../reduxUtils';
+import featureFlags from '../featureFlags';
 import { t } from '../locales';
 
-export function getInitialState(defaultDbId) {
-  const defaultQueryEditor = {
-    id: shortid.generate(),
-    title: t('Untitled Query'),
-    sql: 'SELECT *\nFROM\nWHERE',
-    selectedText: null,
-    latestQueryId: null,
-    autorun: false,
-    dbId: defaultDbId,
-  };
-
-  return {
-    alerts: [],
-    queries: {},
-    databases: {},
-    queryEditors: [defaultQueryEditor],
-    tabHistory: [defaultQueryEditor.id],
-    tables: [],
-    queriesLastUpdate: 0,
-    activeSouthPaneTab: 'Results',
-  };
-}
-
-export const sqlLabReducer = function (state, action) {
+export const sqlLabReducer = function (state = {}, action) {
   const actionHandlers = {
     [actions.ADD_QUERY_EDITOR]() {
       const tabHistory = state.tabHistory.slice();
@@ -95,7 +83,7 @@ export const sqlLabReducer = function (state, action) {
       at.id = shortid.generate();
       // for new table, associate Id of query for data preview
       at.dataPreviewQueryId = null;
-      let newState = addToArr(state, 'tables', at);
+      let newState = addToArr(state, 'tables', at, true);
       if (action.query) {
         newState = alterInArr(newState, 'tables', at, { dataPreviewQueryId: action.query.id });
       }
@@ -171,7 +159,7 @@ export const sqlLabReducer = function (state, action) {
         progress: 100,
         results: action.results,
         rows,
-        state: action.query.state,
+        state: 'rendering',
         errorMessage: null,
         cached: false,
       };
@@ -181,7 +169,12 @@ export const sqlLabReducer = function (state, action) {
       if (action.query.state === 'stopped') {
         return state;
       }
-      const alts = { state: 'failed', errorMessage: action.msg, endDttm: now() };
+      const alts = {
+        state: 'failed',
+        errorMessage: action.msg,
+        endDttm: now(),
+        link: action.link,
+      };
       return alterInObject(state, 'queries', action.query, alts);
     },
     [actions.SET_ACTIVE_QUERY_EDITOR]() {
@@ -220,21 +213,12 @@ export const sqlLabReducer = function (state, action) {
     [actions.QUERY_EDITOR_PERSIST_HEIGHT]() {
       return alterInArr(state, 'queryEditors', action.queryEditor, { height: action.currentHeight });
     },
-    [actions.ADD_ALERT]() {
-      return addToArr(state, 'alerts', action.alert);
-    },
     [actions.SET_DATABASES]() {
       const databases = {};
       action.databases.forEach((db) => {
         databases[db.id] = db;
       });
       return Object.assign({}, state, { databases });
-    },
-    [actions.SET_DEFAULT_DB_ID]() {
-      return Object.assign({}, state, { defaultDbId: action.db_id });
-    },
-    [actions.REMOVE_ALERT]() {
-      return removeFromArr(state, 'alerts', action.alert);
     },
     [actions.REFRESH_QUERIES]() {
       let newQueries = Object.assign({}, state.queries);
@@ -282,3 +266,9 @@ export const sqlLabReducer = function (state, action) {
   }
   return state;
 };
+
+export default combineReducers({
+  featureFlags,
+  sqlLab: sqlLabReducer,
+  messageToasts,
+});

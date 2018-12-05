@@ -1,17 +1,17 @@
-/* global notify */
 /* eslint global-require: 0 */
 import $ from 'jquery';
+import { t } from '../locales';
 
-const d3 = window.d3 || require('d3');
+const d3 = require('d3');
 
 export const EARTH_CIRCUMFERENCE_KM = 40075.16;
 export const LUMINANCE_RED_WEIGHT = 0.2126;
 export const LUMINANCE_GREEN_WEIGHT = 0.7152;
 export const LUMINANCE_BLUE_WEIGHT = 0.0722;
 export const MILES_PER_KM = 1.60934;
-export const DEFAULT_LONGITUDE = -122.405293;
-export const DEFAULT_LATITUDE = 37.772123;
-export const DEFAULT_ZOOM = 11;
+
+// Regexp for the label added to time shifted series (1 hour offset, 2 days offset, etc.)
+export const TIME_SHIFT_PATTERN = /\d+ \w+ offset/;
 
 export function kmToPixels(kilometers, latitude, zoomLevel) {
   // Algorithm from: http://wiki.openstreetmap.org/wiki/Zoom_levels
@@ -69,7 +69,7 @@ export function getParamsFromUrl() {
   return newParams;
 }
 
-export function getShortUrl(longUrl, callback) {
+export function getShortUrl(longUrl, callback, onError) {
   $.ajax({
     type: 'POST',
     url: '/r/shortner/',
@@ -77,11 +77,11 @@ export function getShortUrl(longUrl, callback) {
     data: {
       data: '/' + longUrl,
     },
-    success: (data) => {
-      callback(data);
-    },
+    success: callback,
     error: () => {
-      notify.error('Error getting the short URL');
+      if (onError) {
+        onError('Error getting the short URL');
+      }
       callback(longUrl);
     },
   });
@@ -130,3 +130,8 @@ export function optionFromValue(opt) {
   // From a list of options, handles special values & labels
   return { value: optionValue(opt), label: optionLabel(opt) };
 }
+
+// Error messages used in many places across applications
+export const COMMON_ERR_MESSAGES = {
+  SESSION_TIMED_OUT: t('Your session timed out, please refresh your page and try again.'),
+};
