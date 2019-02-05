@@ -9,8 +9,9 @@ from flask_babel import gettext as __
 from flask_babel import lazy_gettext as _
 from past.builtins import basestring
 
-from superset import appbuilder, db, security_manager, utils
+from superset import appbuilder, db, security_manager
 from superset.connectors.base.views import DatasourceModelView
+from superset.utils import core as utils
 from superset.views.base import (
     DatasourceFilter, DeleteMixin, get_datasource_exist_error_msg,
     ListWidgetWithCheckboxes, SupersetModelView, YamlExportMixin,
@@ -107,7 +108,7 @@ class SqlMetricInlineView(CompactCRUDMixin, SupersetModelView):  # noqa
         'expression': utils.markdown(
             'a valid, *aggregating* SQL expression as supported by the '
             'underlying backend. Example: `count(DISTINCT userid)`', True),
-        'is_restricted': _('Whether the access to this metric is restricted '
+        'is_restricted': _('Whether access to this metric is restricted '
                            'to certain roles. Only roles with the permission '
                            "'metric access on XXX (the name of this metric)' "
                            'are allowed to access this metric'),
