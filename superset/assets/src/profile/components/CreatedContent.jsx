@@ -1,8 +1,9 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import moment from 'moment';
-import TableLoader from './TableLoader';
-import { t } from '../../locales';
+import { t } from '@superset-ui/translation';
+
+import TableLoader from '../../components/TableLoader';
 
 const propTypes = {
   user: PropTypes.object.isRequired,
@@ -30,7 +31,7 @@ class CreatedContent extends React.PureComponent {
         className="table table-condensed"
         columns={['slice', 'favorited']}
         mutator={mutator}
-        noDataText={t('No slices')}
+        noDataText={t('No charts')}
         sortable
       />
     );
@@ -58,7 +59,7 @@ class CreatedContent extends React.PureComponent {
         <h3>{t('Dashboards')}</h3>
         {this.renderDashboardTable()}
         <hr />
-        <h3>{t('Slices')}</h3>
+        <h3>{t('Charts')}</h3>
         {this.renderSliceTable()}
       </div>
     );

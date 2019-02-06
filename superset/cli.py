@@ -1,33 +1,36 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 # pylint: disable=C,R,W
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
-
 from datetime import datetime
 import logging
 from subprocess import Popen
 from sys import stdout
 
+import click
 from colorama import Fore, Style
-from flask_migrate import MigrateCommand
-from flask_script import Manager
 from pathlib2 import Path
 import werkzeug.serving
 import yaml
 
-from superset import app, data, db, dict_import_export_util, security_manager, utils
+from superset import (
+    app, data, db, security_manager,
+)
+from superset.utils import (
+    core as utils, dashboard_import_export, dict_import_export)
 
 config = app.config
 celery_app = utils.get_celery_app(config)
 
-manager = Manager(app)
-manager.add_command('db', MigrateCommand)
+
+def create_app(script_info=None):
+    return app
 
 
-@manager.command
+@app.shell_context_processor
+def make_shell_context():
+    return dict(app=app, db=db)
+
+
+@app.cli.command()
 def init():
     """Inits the Superset application"""
     utils.get_or_create_main_db()
@@ -35,12 +38,17 @@ def init():
 
 
 def debug_run(app, port, use_reloader):
-    return app.run(
-        host='0.0.0.0',
-        port=int(port),
-        threaded=True,
-        debug=True,
-        use_reloader=use_reloader)
+    click.secho(
+        '[DEPRECATED] As of Flask >=1.0.0, this command is no longer '
+        'supported, please use `flask run` instead, as documented in our '
+        'CONTRIBUTING.md',
+        fg='red',
+    )
+    click.secho('[example]', fg='yellow')
+    click.secho(
+        'flask run -p 8080 --with-threads --reload --debugger',
+        fg='green',
+    )
 
 
 def console_log_run(app, port, use_reloader):
@@ -65,34 +73,26 @@ def console_log_run(app, port, use_reloader):
     run()
 
 
-@manager.option(
-    '-d', '--debug', action='store_true',
-    help='Start the web server in debug mode')
-@manager.option(
-    '--console-log', action='store_true',
-    help='Create logger that logs to the browser console (implies -d)')
-@manager.option(
-    '-n', '--no-reload', action='store_false', dest='use_reloader',
-    default=config.get('FLASK_USE_RELOAD'),
-    help="Don't use the reloader in debug mode")
-@manager.option(
-    '-a', '--address', default=config.get('SUPERSET_WEBSERVER_ADDRESS'),
-    help='Specify the address to which to bind the web server')
-@manager.option(
-    '-p', '--port', default=config.get('SUPERSET_WEBSERVER_PORT'),
-    help='Specify the port on which to run the web server')
-@manager.option(
-    '-w', '--workers',
-    default=config.get('SUPERSET_WORKERS', 2),
-    help='Number of gunicorn web server workers to fire up [DEPRECATED]')
-@manager.option(
-    '-t', '--timeout', default=config.get('SUPERSET_WEBSERVER_TIMEOUT'),
-    help='Specify the timeout (seconds) for the gunicorn web server [DEPRECATED]')
-@manager.option(
-    '-s', '--socket', default=config.get('SUPERSET_WEBSERVER_SOCKET'),
-    help='Path to a UNIX socket as an alternative to address:port, e.g. '
-         '/var/run/superset.sock. '
-         'Will override the address and port values. [DEPRECATED]')
+@app.cli.command()
+@click.option('--debug', '-d', is_flag=True, help='Start the web server in debug mode')
+@click.option('--console-log', is_flag=True,
+              help='Create logger that logs to the browser console (implies -d)')
+@click.option('--no-reload', '-n', 'use_reloader', flag_value=False,
+              default=config.get('FLASK_USE_RELOAD'),
+              help='Don\'t use the reloader in debug mode')
+@click.option('--address', '-a', default=config.get('SUPERSET_WEBSERVER_ADDRESS'),
+              help='Specify the address to which to bind the web server')
+@click.option('--port', '-p', default=config.get('SUPERSET_WEBSERVER_PORT'),
+              help='Specify the port on which to run the web server')
+@click.option('--workers', '-w', default=config.get('SUPERSET_WORKERS', 2),
+              help='Number of gunicorn web server workers to fire up [DEPRECATED]')
+@click.option('--timeout', '-t', default=config.get('SUPERSET_WEBSERVER_TIMEOUT'),
+              help='Specify the timeout (seconds) for the '
+                   'gunicorn web server [DEPRECATED]')
+@click.option('--socket', '-s', default=config.get('SUPERSET_WEBSERVER_SOCKET'),
+              help='Path to a UNIX socket as an alternative to address:port, e.g. '
+                   '/var/run/superset.sock. '
+                   'Will override the address and port values. [DEPRECATED]')
 def runserver(debug, console_log, use_reloader, address, port, timeout, workers, socket):
     """Starts a Superset web server."""
     debug = debug or config.get('DEBUG') or console_log
@@ -127,9 +127,8 @@ def runserver(debug, console_log, use_reloader, address, port, timeout, workers,
         Popen(cmd, shell=True).wait()
 
 
-@manager.option(
-    '-v', '--verbose', action='store_true',
-    help='Show extra information')
+@app.cli.command()
+@click.option('--verbose', '-v', is_flag=True, help='Show extra information')
 def version(verbose):
     """Prints the current version number"""
     print(Fore.BLUE + '-=' * 15)
@@ -141,11 +140,7 @@ def version(verbose):
     print(Style.RESET_ALL)
 
 
-@manager.option(
-    '-t', '--load-test-data', action='store_true',
-    help='Load additional test data')
-def load_examples(load_test_data):
-    """Loads a set of Slices and Dashboards and a supporting dataset """
+def load_examples_run(load_test_data):
     print('Loading examples into {}'.format(db))
 
     data.load_css_templates()
@@ -169,10 +164,7 @@ def load_examples(load_test_data):
     data.load_country_map_data()
 
     print('Loading [Multiformat time series]')
-    data.load_multiformat_time_series_data()
-
-    print('Loading [Misc Charts] dashboard')
-    data.load_misc_dashboard()
+    data.load_multiformat_time_series()
 
     print('Loading [Paris GeoJson]')
     data.load_paris_iris_geojson()
@@ -186,6 +178,12 @@ def load_examples(load_test_data):
     print('Loading [BART lines]')
     data.load_bart_lines()
 
+    print('Loading [Multi Line]')
+    data.load_multi_line()
+
+    print('Loading [Misc Charts] dashboard')
+    data.load_misc_dashboard()
+
     if load_test_data:
         print('Loading [Unicode test data]')
         data.load_unicode_test_data()
@@ -194,19 +192,19 @@ def load_examples(load_test_data):
     data.load_deck_dash()
 
 
-@manager.option(
-    '-d', '--datasource',
-    help=(
-        'Specify which datasource name to load, if omitted, all '
-        'datasources will be refreshed'
-    ),
-)
-@manager.option(
-    '-m', '--merge',
-    action='store_true',
-    help="Specify using 'merge' property during operation.",
-    default=False,
-)
+@app.cli.command()
+@click.option('--load-test-data', '-t', is_flag=True, help='Load additional test data')
+def load_examples(load_test_data):
+    """Loads a set of Slices and Dashboards and a supporting dataset """
+    load_examples_run(load_test_data)
+
+
+@app.cli.command()
+@click.option('--datasource', '-d', help='Specify which datasource name to load, if '
+                                         'omitted, all datasources will be refreshed')
+@click.option('--merge', '-m', is_flag=True, default=False,
+              help='Specify using \'merge\' property during operation. '
+                   'Default value is False.')
 def refresh_druid(datasource, merge):
     """Refresh druid datasources"""
     session = db.session()
@@ -227,17 +225,65 @@ def refresh_druid(datasource, merge):
     session.commit()
 
 
-@manager.option(
-    '-p', '--path', dest='path',
+@app.cli.command()
+@click.option(
+    '--path', '-p',
+    help='Path to a single JSON file or path containing multiple JSON files'
+         'files to import (*.json)')
+@click.option(
+    '--recursive', '-r',
+    help='recursively search the path for json files')
+def import_dashboards(path, recursive=False):
+    """Import dashboards from JSON"""
+    p = Path(path)
+    files = []
+    if p.is_file():
+        files.append(p)
+    elif p.exists() and not recursive:
+        files.extend(p.glob('*.json'))
+    elif p.exists() and recursive:
+        files.extend(p.rglob('*.json'))
+    for f in files:
+        logging.info('Importing dashboard from file %s', f)
+        try:
+            with f.open() as data_stream:
+                dashboard_import_export.import_dashboards(
+                    db.session, data_stream)
+        except Exception as e:
+            logging.error('Error when importing dashboard from file %s', f)
+            logging.error(e)
+
+
+@app.cli.command()
+@click.option(
+    '--dashboard-file', '-f', default=None,
+    help='Specify the the file to export to')
+@click.option(
+    '--print_stdout', '-p',
+    help='Print JSON to stdout')
+def export_dashboards(print_stdout, dashboard_file):
+    """Export dashboards to JSON"""
+    data = dashboard_import_export.export_dashboards(db.session)
+    if print_stdout or not dashboard_file:
+        print(data)
+    if dashboard_file:
+        logging.info('Exporting dashboards to %s', dashboard_file)
+        with open(dashboard_file, 'w') as data_stream:
+            data_stream.write(data)
+
+
+@app.cli.command()
+@click.option(
+    '--path', '-p',
     help='Path to a single YAML file or path containing multiple YAML '
          'files to import (*.yaml or *.yml)')
-@manager.option(
-    '-s', '--sync', dest='sync', default='',
+@click.option(
+    '--sync', '-s', 'sync', default='',
     help='comma seperated list of element types to synchronize '
          'e.g. "metrics,columns" deletes metrics and columns in the DB '
          'that are not specified in the YAML file')
-@manager.option(
-    '-r', '--recursive', dest='recursive', action='store_true',
+@click.option(
+    '--recursive', '-r',
     help='recursively search the path for yaml files')
 def import_datasources(path, sync, recursive=False):
     """Import datasources from YAML"""
@@ -256,7 +302,7 @@ def import_datasources(path, sync, recursive=False):
         logging.info('Importing datasources from file %s', f)
         try:
             with f.open() as data_stream:
-                dict_import_export_util.import_from_dict(
+                dict_import_export.import_from_dict(
                     db.session,
                     yaml.safe_load(data_stream),
                     sync=sync_array)
@@ -265,22 +311,23 @@ def import_datasources(path, sync, recursive=False):
             logging.error(e)
 
 
-@manager.option(
-    '-f', '--datasource-file', default=None, dest='datasource_file',
+@app.cli.command()
+@click.option(
+    '--datasource-file', '-f', default=None,
     help='Specify the the file to export to')
-@manager.option(
-    '-p', '--print', action='store_true', dest='print_stdout',
+@click.option(
+    '--print_stdout', '-p',
     help='Print YAML to stdout')
-@manager.option(
-    '-b', '--back-references', action='store_true', dest='back_references',
+@click.option(
+    '--back-references', '-b',
     help='Include parent back references')
-@manager.option(
-    '-d', '--include-defaults', action='store_true', dest='include_defaults',
+@click.option(
+    '--include-defaults', '-d',
     help='Include fields containing defaults')
 def export_datasources(print_stdout, datasource_file,
                        back_references, include_defaults):
     """Export datasources to YAML"""
-    data = dict_import_export_util.export_to_dict(
+    data = dict_import_export.export_to_dict(
         session=db.session,
         recursive=True,
         back_references=back_references,
@@ -293,31 +340,36 @@ def export_datasources(print_stdout, datasource_file,
             yaml.safe_dump(data, data_stream, default_flow_style=False)
 
 
-@manager.option(
-    '-b', '--back-references', action='store_false',
+@app.cli.command()
+@click.option(
+    '--back-references', '-b',
     help='Include parent back references')
 def export_datasource_schema(back_references):
     """Export datasource YAML schema to stdout"""
-    data = dict_import_export_util.export_schema_to_dict(
+    data = dict_import_export.export_schema_to_dict(
         back_references=back_references)
     yaml.safe_dump(data, stdout, default_flow_style=False)
 
 
-@manager.command
+@app.cli.command()
 def update_datasources_cache():
     """Refresh sqllab datasources cache"""
     from superset.models.core import Database
     for database in db.session.query(Database).all():
-        print('Fetching {} datasources ...'.format(database.name))
-        try:
-            database.all_table_names(force=True)
-            database.all_view_names(force=True)
-        except Exception as e:
-            print('{}'.format(str(e)))
+        if database.allow_multi_schema_metadata_fetch:
+            print('Fetching {} datasources ...'.format(database.name))
+            try:
+                database.all_table_names_in_database(
+                    force=True, cache=True, cache_timeout=24 * 60 * 60)
+                database.all_view_names_in_database(
+                    force=True, cache=True, cache_timeout=24 * 60 * 60)
+            except Exception as e:
+                print('{}'.format(str(e)))
 
 
-@manager.option(
-    '-w', '--workers',
+@app.cli.command()
+@click.option(
+    '--workers', '-w',
     type=int,
     help='Number of celery server workers to fire up')
 def worker(workers):
@@ -335,14 +387,15 @@ def worker(workers):
     worker.start()
 
 
-@manager.option(
+@app.cli.command()
+@click.option(
     '-p', '--port',
     default='5555',
-    help=('Port on which to start the Flower process'))
-@manager.option(
+    help='Port on which to start the Flower process')
+@click.option(
     '-a', '--address',
     default='localhost',
-    help=('Address on which to run the service'))
+    help='Address on which to run the service')
 def flower(port, address):
     """Runs a Celery Flower web server
 
@@ -363,3 +416,70 @@ def flower(port, address):
     print(Fore.YELLOW + cmd)
     print(Fore.BLUE + '-=' * 40)
     Popen(cmd, shell=True).wait()
+
+
+@app.cli.command()
+def load_test_users():
+    """
+    Loads admin, alpha, and gamma user for testing purposes
+
+    Syncs permissions for those users/roles
+    """
+    print(Fore.GREEN + 'Loading a set of users for unit tests')
+    load_test_users_run()
+
+
+def load_test_users_run():
+    """
+    Loads admin, alpha, and gamma user for testing purposes
+
+    Syncs permissions for those users/roles
+    """
+    if config.get('TESTING'):
+        security_manager.sync_role_definitions()
+        gamma_sqllab_role = security_manager.add_role('gamma_sqllab')
+        for perm in security_manager.find_role('Gamma').permissions:
+            security_manager.add_permission_role(gamma_sqllab_role, perm)
+        utils.get_or_create_main_db()
+        db_perm = utils.get_main_database(security_manager.get_session).perm
+        security_manager.merge_perm('database_access', db_perm)
+        db_pvm = security_manager.find_permission_view_menu(
+            view_menu_name=db_perm, permission_name='database_access')
+        gamma_sqllab_role.permissions.append(db_pvm)
+        for perm in security_manager.find_role('sql_lab').permissions:
+            security_manager.add_permission_role(gamma_sqllab_role, perm)
+
+        admin = security_manager.find_user('admin')
+        if not admin:
+            security_manager.add_user(
+                'admin', 'admin', ' user', 'admin@fab.org',
+                security_manager.find_role('Admin'),
+                password='general')
+
+        gamma = security_manager.find_user('gamma')
+        if not gamma:
+            security_manager.add_user(
+                'gamma', 'gamma', 'user', 'gamma@fab.org',
+                security_manager.find_role('Gamma'),
+                password='general')
+
+        gamma2 = security_manager.find_user('gamma2')
+        if not gamma2:
+            security_manager.add_user(
+                'gamma2', 'gamma2', 'user', 'gamma2@fab.org',
+                security_manager.find_role('Gamma'),
+                password='general')
+
+        gamma_sqllab_user = security_manager.find_user('gamma_sqllab')
+        if not gamma_sqllab_user:
+            security_manager.add_user(
+                'gamma_sqllab', 'gamma_sqllab', 'user', 'gamma_sqllab@fab.org',
+                gamma_sqllab_role, password='general')
+
+        alpha = security_manager.find_user('alpha')
+        if not alpha:
+            security_manager.add_user(
+                'alpha', 'alpha', 'user', 'alpha@fab.org',
+                security_manager.find_role('Alpha'),
+                password='general')
+        security_manager.get_session.commit()

@@ -3,7 +3,7 @@
  *
  * While the React components located in `controls/components` represent different
  * types of controls (CheckboxControl, SelectControl, TextControl, ...), the controls here
- * represent instances of control types, that can be reused across visualisation types.
+ * represent instances of control types, that can be reused across visualization types.
  *
  * When controls are reused across viz types, their values are carried over as a user
  * changes the chart types.
@@ -35,22 +35,27 @@
  *
  * Note that the keys defined in controls in this file that are not listed above represent
  * props specific for the React component defined as `type`. Also note that this module work
- * in tandem with `visTypes.js` that defines how controls are composed into sections for
+ * in tandem with `controlPanels/index.js` that defines how controls are composed into sections for
  * each and every visualization type.
  */
 import React from 'react';
+import { t } from '@superset-ui/translation';
+import { getCategoricalSchemeRegistry, getSequentialSchemeRegistry } from '@superset-ui/color';
+
 import {
   formatSelectOptionsForRange,
   formatSelectOptions,
   mainMetric,
 } from '../modules/utils';
 import * as v from './validators';
-import { colorPrimary, ALL_COLOR_SCHEMES, spectrums } from '../modules/colors';
 import { defaultViewport } from '../modules/geo';
-import MetricOption from '../components/MetricOption';
 import ColumnOption from '../components/ColumnOption';
 import OptionDescription from '../components/OptionDescription';
-import { t } from '../locales';
+
+const categoricalSchemeRegistry = getCategoricalSchemeRegistry();
+const sequentialSchemeRegistry = getSequentialSchemeRegistry();
+
+const PRIMARY_COLOR = { r: 0, g: 122, b: 135, a: 1 };
 
 const D3_FORMAT_DOCS = 'D3 format syntax: https://github.com/d3/d3-format';
 
@@ -104,6 +109,10 @@ const groupByControl = {
   optionRenderer: c => <ColumnOption column={c} showType />,
   valueRenderer: c => <ColumnOption column={c} />,
   valueKey: 'column_name',
+  filterOption: (opt, text) => (
+    (opt.column_name && opt.column_name.toLowerCase().indexOf(text) >= 0) ||
+    (opt.verbose_name && opt.verbose_name.toLowerCase().indexOf(text) >= 0)
+  ),
   mapStateToProps: (state, control) => {
     const newState = {};
     if (state.datasource) {
@@ -114,6 +123,32 @@ const groupByControl = {
     }
     return newState;
   },
+};
+
+const metrics = {
+  type: 'MetricsControl',
+  multi: true,
+  label: t('Metrics'),
+  validators: [v.nonEmpty],
+  default: (c) => {
+    const metric = mainMetric(c.savedMetrics);
+    return metric ? [metric] : null;
+  },
+  mapStateToProps: (state) => {
+    const datasource = state.datasource;
+    return {
+      columns: datasource ? datasource.columns : [],
+      savedMetrics: datasource ? datasource.metrics : [],
+      datasourceType: datasource && datasource.type,
+    };
+  },
+  description: t('One or many metrics to display'),
+};
+const metric = {
+  ...metrics,
+  multi: false,
+  label: t('Metric'),
+  default: props => mainMetric(props.savedMetrics),
 };
 
 const sandboxUrl = (
@@ -152,13 +187,19 @@ function jsFunctionControl(label, description, extraDescr = null, height = 100, 
 }
 
 export const controls = {
+
+  metrics,
+
+  metric,
+
   datasource: {
     type: 'DatasourceControl',
     label: t('Datasource'),
     default: null,
     description: null,
-    mapStateToProps: state => ({
+    mapStateToProps: (state, control, actions) => ({
       datasource: state.datasource,
+      onDatasourceSave: actions ? actions.setDatasource : () => {},
     }),
   },
 
@@ -169,36 +210,12 @@ export const controls = {
     description: t('The type of visualization to display'),
   },
 
-  metrics: {
-    type: 'MetricsControl',
-    multi: true,
-    label: t('Metrics'),
-    validators: [v.nonEmpty],
-    default: (c) => {
-      const metric = mainMetric(c.savedMetrics);
-      return metric ? [metric] : null;
-    },
-    mapStateToProps: (state) => {
-      const datasource = state.datasource;
-      return {
-        columns: datasource ? datasource.columns : [],
-        savedMetrics: datasource ? datasource.metrics : [],
-        datasourceType: datasource && datasource.type,
-      };
-    },
-    description: t('One or many metrics to display'),
-  },
-
   percent_metrics: {
-    type: 'SelectControl',
+    ...metrics,
     multi: true,
+    default: [],
     label: t('Percentage Metrics'),
-    valueKey: 'metric_name',
-    optionRenderer: m => <MetricOption metric={m} showType />,
-    valueRenderer: m => <MetricOption metric={m} />,
-    mapStateToProps: state => ({
-      options: (state.datasource) ? state.datasource.metrics : [],
-    }),
+    validators: [],
     description: t('Metrics for which percentage of total are to be displayed'),
   },
 
@@ -207,7 +224,7 @@ export const controls = {
     label: t('Y Axis Bounds'),
     renderTrigger: true,
     default: [null, null],
-    description: t('Bounds for the Y axis. When left empty, the bounds are ' +
+    description: t('Bounds for the Y-axis. When left empty, the bounds are ' +
     'dynamically defined based on the min/max of the data. Note that ' +
     "this feature will only expand the axis range. It won't " +
     "narrow the data's extent."),
@@ -227,7 +244,15 @@ export const controls = {
     label: t('Fixed Color'),
     description: t('Use this to define a static color for all circles'),
     type: 'ColorPickerControl',
-    default: colorPrimary,
+    default: PRIMARY_COLOR,
+    renderTrigger: true,
+  },
+
+  target_color_picker: {
+    label: t('Target Color'),
+    description: t('Color of the target location'),
+    type: 'ColorPickerControl',
+    default: PRIMARY_COLOR,
     renderTrigger: true,
   },
 
@@ -238,6 +263,7 @@ export const controls = {
     clearable: false,
     default: 'tr',
     choices: [
+      [null, 'None'],
       ['tl', 'Top left'],
       ['tr', 'Top right'],
       ['bl', 'Bottom left'],
@@ -250,7 +276,7 @@ export const controls = {
     label: t('Fill Color'),
     description: t(' Set the opacity to 0 if you do not want to override the color specified in the GeoJSON'),
     type: 'ColorPickerControl',
-    default: colorPrimary,
+    default: PRIMARY_COLOR,
     renderTrigger: true,
   },
 
@@ -258,37 +284,15 @@ export const controls = {
     label: t('Stroke Color'),
     description: t(' Set the opacity to 0 if you do not want to override the color specified in the GeoJSON'),
     type: 'ColorPickerControl',
-    default: colorPrimary,
+    default: PRIMARY_COLOR,
     renderTrigger: true,
   },
 
-  metric: {
-    type: 'MetricsControl',
-    multi: false,
-    label: t('Metric'),
-    clearable: false,
-    validators: [v.nonEmpty],
-    default: props => mainMetric(props.savedMetrics),
-    mapStateToProps: state => ({
-      columns: state.datasource ? state.datasource.columns : [],
-      savedMetrics: state.datasource ? state.datasource.metrics : [],
-      datasourceType: state.datasource && state.datasource.type,
-    }),
-  },
-
   metric_2: {
-    type: 'SelectControl',
+    ...metric,
     label: t('Right Axis Metric'),
-    default: null,
-    validators: [v.nonEmpty],
     clearable: true,
     description: t('Choose a metric for right axis'),
-    valueKey: 'metric_name',
-    optionRenderer: m => <MetricOption metric={m} showType />,
-    valueRenderer: m => <MetricOption metric={m} />,
-    mapStateToProps: state => ({
-      options: (state.datasource) ? state.datasource.metrics : [],
-    }),
   },
 
   stacked_style: {
@@ -323,25 +327,14 @@ export const controls = {
   linear_color_scheme: {
     type: 'ColorSchemeControl',
     label: t('Linear Color Scheme'),
-    choices: [
-      ['fire', 'fire'],
-      ['white_black', 'white/black'],
-      ['black_white', 'black/white'],
-      ['dark_blue', 'light/dark blue'],
-      ['pink_grey', 'pink/white/grey'],
-      ['greens', 'greens'],
-      ['purples', 'purples'],
-      ['oranges', 'oranges'],
-      ['blue_white_yellow', 'blue/white/yellow'],
-      ['red_yellow_blue', 'red/yellowish/blue'],
-      ['brown_white_green', 'brown/white/green'],
-      ['purple_white_green', 'purple/white/green'],
-    ],
+    choices: () => sequentialSchemeRegistry
+      .values()
+      .map(value => [value.name, value.label]),
     default: 'blue_white_yellow',
     clearable: false,
     description: '',
     renderTrigger: true,
-    schemes: spectrums,
+    schemes: () => sequentialSchemeRegistry.getMap(),
     isLinear: true,
   },
 
@@ -361,14 +354,15 @@ export const controls = {
 
   horizon_color_scale: {
     type: 'SelectControl',
-    label: t('Horizon Color Scale'),
+    renderTrigger: true,
+    label: t('Value Domain'),
     choices: [
       ['series', 'series'],
       ['overall', 'overall'],
       ['change', 'change'],
     ],
     default: 'series',
-    description: t('Defines how the color are attributed.'),
+    description: t('series: Treat each series independently; overall: All series use the same scale; change: Show changes compared to the first data point in each series'),
   },
 
   canvas_image_rendering: {
@@ -492,8 +486,8 @@ export const controls = {
     label: t('Reduce X ticks'),
     renderTrigger: true,
     default: false,
-    description: t('Reduces the number of X axis ticks to be rendered. ' +
-    'If true, the x axis wont overflow and labels may be ' +
+    description: t('Reduces the number of X-axis ticks to be rendered. ' +
+    'If true, the x-axis will not overflow and labels may be ' +
     'missing. If false, a minimum width will be applied ' +
     'to columns and the width may overflow into an ' +
     'horizontal scroll.'),
@@ -508,13 +502,11 @@ export const controls = {
   },
 
   secondary_metric: {
-    type: 'SelectControl',
+    ...metric,
     label: t('Color Metric'),
     default: null,
+    validators: [],
     description: t('A metric to use for color'),
-    mapStateToProps: state => ({
-      choices: (state.datasource) ? state.datasource.metrics_combo : [],
-    }),
   },
   select_country: {
     type: 'SelectControl',
@@ -530,15 +522,19 @@ export const controls = {
       'Italy',
       'Portugal',
       'Morocco',
+      'Myanmar',
       'Netherlands',
       'Russia',
       'Singapore',
       'Spain',
+      'Thailand',
+      'Timorleste',
       'Uk',
       'Ukraine',
       'Usa',
+      'Zambia',
     ].map(s => [s, s]),
-    description: t('The name of country that Superset should display'),
+    description: t('The name of the country that Superset should display'),
   },
   country_fieldtype: {
     type: 'SelectControl',
@@ -658,21 +654,18 @@ export const controls = {
     }),
   },
 
+  filter_nulls: {
+    type: 'CheckboxControl',
+    label: t('Ignore null locations'),
+    default: true,
+    description: t('Whether to ignore locations that are null'),
+  },
+
   geojson: {
     type: 'SelectControl',
     label: t('GeoJson Column'),
     validators: [v.nonEmpty],
     description: t('Select the geojson column'),
-    mapStateToProps: state => ({
-      choices: (state.datasource) ? state.datasource.all_cols : [],
-    }),
-  },
-
-  polygon: {
-    type: 'SelectControl',
-    label: t('Polygon Column'),
-    validators: [v.nonEmpty],
-    description: t('Select the polygon column. Each row should contain JSON.array(N) of [longitude, latitude] points'),
     mapStateToProps: state => ({
       choices: (state.datasource) ? state.datasource.all_cols : [],
     }),
@@ -693,6 +686,7 @@ export const controls = {
     label: t('Stroke Width'),
     validators: [v.integer],
     default: null,
+    renderTrigger: true,
     choices: formatSelectOptions([1, 2, 3, 4, 5]),
   },
 
@@ -747,7 +741,7 @@ export const controls = {
     default: 'auto',
     clearable: false,
     renderTrigger: true,
-    description: t('The way the ticks are laid out on the X axis'),
+    description: t('The way the ticks are laid out on the X-axis'),
   },
 
   left_margin: {
@@ -772,6 +766,7 @@ export const controls = {
       ['PT30S', '30 seconds'],
       ['PT1M', '1 minute'],
       ['PT5M', '5 minutes'],
+      ['PT30M', '30 minutes'],
       ['PT1H', '1 hour'],
       ['PT6H', '6 hour'],
       ['P1D', '1 day'],
@@ -780,6 +775,8 @@ export const controls = {
       ['week_starting_sunday', 'week starting Sunday'],
       ['week_ending_saturday', 'week ending Saturday'],
       ['P1M', 'month'],
+      ['P3M', 'quarter'],
+      ['P1Y', 'year'],
     ],
     description: t('The time granularity for the visualization. Note that you ' +
     'can type and use simple natural language as in `10 seconds`, ' +
@@ -805,6 +802,7 @@ export const controls = {
 
   link_length: {
     type: 'SelectControl',
+    renderTrigger: true,
     freeForm: true,
     label: t('Link Length'),
     default: '200',
@@ -814,6 +812,7 @@ export const controls = {
 
   charge: {
     type: 'SelectControl',
+    renderTrigger: true,
     freeForm: true,
     label: t('Charge'),
     default: '-500',
@@ -840,29 +839,30 @@ export const controls = {
     'column in the table. Also note that the ' +
     'filter below is applied against this column or ' +
     'expression'),
-    default: (c) => {
-      if (c.options && c.options.length > 0) {
-        return c.options[0].column_name;
-      }
-      return null;
-    },
+    default: control => control.default,
     clearable: false,
     optionRenderer: c => <ColumnOption column={c} showType />,
     valueRenderer: c => <ColumnOption column={c} />,
     valueKey: 'column_name',
     mapStateToProps: (state) => {
-      const newState = {};
+      const props = {};
       if (state.datasource) {
-        newState.options = state.datasource.columns.filter(c => c.is_dttm);
+        props.options = state.datasource.columns.filter(c => c.is_dttm);
+        props.default = null;
+        if (state.datasource.main_dttm_col) {
+          props.default = state.datasource.main_dttm_col;
+        } else if (props.options && props.options.length > 0) {
+          props.default = props.options[0].column_name;
+        }
       }
-      return newState;
+      return props;
     },
   },
 
   time_grain_sqla: {
     type: 'SelectControl',
     label: t('Time Grain'),
-    default: control => control.choices && control.choices.length ? control.choices[0][0] : null,
+    default: 'P1D',
     description: t('The time granularity for the visualization. This ' +
     'applies a date transformation to alter ' +
     'your time column and defines a new time granularity. ' +
@@ -876,7 +876,7 @@ export const controls = {
   resample_rule: {
     type: 'SelectControl',
     freeForm: true,
-    label: t('Resample Rule'),
+    label: t('Rule'),
     default: null,
     choices: formatSelectOptions(['', '1T', '1H', '1D', '7D', '1M', '1AS']),
     description: t('Pandas resample rule'),
@@ -885,7 +885,7 @@ export const controls = {
   resample_how: {
     type: 'SelectControl',
     freeForm: true,
-    label: t('Resample How'),
+    label: t('How'),
     default: null,
     choices: formatSelectOptions(['', 'mean', 'sum', 'median']),
     description: t('Pandas resample how'),
@@ -894,24 +894,17 @@ export const controls = {
   resample_fillmethod: {
     type: 'SelectControl',
     freeForm: true,
-    label: t('Resample Fill Method'),
+    label: t('Fill Method'),
     default: null,
     choices: formatSelectOptions(['', 'ffill', 'bfill']),
     description: t('Pandas resample fill method'),
   },
 
-  since: {
+  time_range: {
     type: 'DateFilterControl',
     freeForm: true,
-    label: t('Since'),
-    default: t('7 days ago'),
-  },
-
-  until: {
-    type: 'DateFilterControl',
-    freeForm: true,
-    label: t('Until'),
-    default: 'now',
+    label: t('Time range'),
+    default: t('Last week'),
   },
 
   max_bubble_size: {
@@ -978,12 +971,14 @@ export const controls = {
   },
 
   timeseries_limit_metric: {
-    type: 'SelectControl',
+    type: 'MetricsControl',
     label: t('Sort By'),
     default: null,
     description: t('Metric used to define the top series'),
     mapStateToProps: state => ({
-      choices: (state.datasource) ? state.datasource.metrics_combo : [],
+      columns: state.datasource ? state.datasource.columns : [],
+      savedMetrics: state.datasource ? state.datasource.metrics : [],
+      datasourceType: state.datasource && state.datasource.type,
     }),
   },
 
@@ -1035,7 +1030,7 @@ export const controls = {
     isInt: true,
     validators: [v.integer],
     renderTrigger: true,
-    default: 0,
+    default: 2,
     label: t('Cell Padding'),
     description: t('The distance between cells, in pixels'),
   },
@@ -1104,44 +1099,23 @@ export const controls = {
   },
 
   x: {
-    type: 'SelectControl',
+    ...metric,
     label: t('X Axis'),
     description: t('Metric assigned to the [X] axis'),
     default: null,
-    validators: [v.nonEmpty],
-    optionRenderer: m => <MetricOption metric={m} showType />,
-    valueRenderer: m => <MetricOption metric={m} />,
-    valueKey: 'metric_name',
-    mapStateToProps: state => ({
-      options: (state.datasource) ? state.datasource.metrics : [],
-    }),
   },
 
   y: {
-    type: 'SelectControl',
+    ...metric,
     label: t('Y Axis'),
     default: null,
-    validators: [v.nonEmpty],
     description: t('Metric assigned to the [Y] axis'),
-    optionRenderer: m => <MetricOption metric={m} showType />,
-    valueRenderer: m => <MetricOption metric={m} />,
-    valueKey: 'metric_name',
-    mapStateToProps: state => ({
-      options: (state.datasource) ? state.datasource.metrics : [],
-    }),
   },
 
   size: {
-    type: 'SelectControl',
+    ...metric,
     label: t('Bubble Size'),
     default: null,
-    validators: [v.nonEmpty],
-    optionRenderer: m => <MetricOption metric={m} showType />,
-    valueRenderer: m => <MetricOption metric={m} />,
-    valueKey: 'metric_name',
-    mapStateToProps: state => ({
-      options: (state.datasource) ? state.datasource.metrics : [],
-    }),
   },
 
   url: {
@@ -1164,34 +1138,6 @@ export const controls = {
     label: t('Y Axis Label'),
     renderTrigger: true,
     default: '',
-  },
-
-  where: {
-    type: 'TextAreaControl',
-    label: t('Custom WHERE clause'),
-    default: '',
-    language: 'sql',
-    minLines: 2,
-    maxLines: 10,
-    offerEditInModal: false,
-    description: t('The text in this box gets included in your query\'s WHERE ' +
-    'clause, as an AND to other criteria. You can include ' +
-    'complex expression, parenthesis and anything else ' +
-    'supported by the backend it is directed towards.'),
-  },
-
-  having: {
-    type: 'TextAreaControl',
-    label: t('Custom HAVING clause'),
-    default: '',
-    language: 'sql',
-    minLines: 2,
-    maxLines: 10,
-    offerEditInModal: false,
-    description: t('The text in this box gets included in your query\'s HAVING ' +
-    'clause, as an AND to other criteria. You can include ' +
-    'complex expression, parenthesis and anything else ' +
-    'supported by the backend it is directed towards.'),
   },
 
   compare_lag: {
@@ -1221,6 +1167,7 @@ export const controls = {
 
   series_height: {
     type: 'SelectControl',
+    renderTrigger: true,
     freeForm: true,
     label: t('Series Height'),
     default: '25',
@@ -1269,11 +1216,12 @@ export const controls = {
     mapStateToProps: (state) => {
       const showWarning = (
           state.controls &&
-          state.controls.num_period_compare &&
-          state.controls.num_period_compare.value !== '');
+          state.controls.comparison_type &&
+          state.controls.comparison_type.value === 'percentage');
       return {
         warning: showWarning ?
-          t('When `Period Ratio` is set, the Y Axis Format is forced to `.1%`') : null,
+          t('When `Calculation type` is set to "Percentage change", the Y ' +
+            'Axis Format is forced to `.1%`') : null,
         disabled: showWarning,
       };
     },
@@ -1312,7 +1260,8 @@ export const controls = {
     type: 'SelectControl',
     label: t('Rotation'),
     choices: formatSelectOptions(['random', 'flat', 'square']),
-    default: 'random',
+    renderTrigger: true,
+    default: 'flat',
     description: t('Rotation to apply to words in the cloud'),
   },
 
@@ -1360,7 +1309,6 @@ export const controls = {
       'mean',
       'min',
       'max',
-      'median',
       'stdev',
       'var',
     ]),
@@ -1369,10 +1317,34 @@ export const controls = {
     'computing the total rows and columns'),
   },
 
+  js_agg_function: {
+    type: 'SelectControl',
+    label: t('Dynamic Aggregation Function'),
+    description: t('The function to use when aggregating points into groups'),
+    default: 'sum',
+    clearable: false,
+    renderTrigger: true,
+    choices: formatSelectOptions([
+      'sum',
+      'min',
+      'max',
+      'mean',
+      'median',
+      'count',
+      'variance',
+      'deviation',
+      'p1',
+      'p5',
+      'p95',
+      'p99',
+    ]),
+  },
+
   size_from: {
     type: 'TextControl',
     isInt: true,
     label: t('Font Size From'),
+    renderTrigger: true,
     default: '20',
     description: t('Font size for the smallest value in the list'),
   },
@@ -1381,6 +1353,7 @@ export const controls = {
     type: 'TextControl',
     isInt: true,
     label: t('Font Size To'),
+    renderTrigger: true,
     default: '150',
     description: t('Font size for the biggest value in the list'),
   },
@@ -1457,6 +1430,7 @@ export const controls = {
     type: 'CheckboxControl',
     label: t('Data Table'),
     default: false,
+    renderTrigger: true,
     description: t('Whether to display the interactive data table'),
   },
 
@@ -1470,10 +1444,10 @@ export const controls = {
 
   table_filter: {
     type: 'CheckboxControl',
-    label: t('Table Filter'),
+    label: t('Emit Filter Events'),
     renderTrigger: true,
     default: false,
-    description: t('Whether to apply filter when table cell is clicked'),
+    description: t('Whether to apply filter when items are clicked'),
   },
 
   align_pn: {
@@ -1508,6 +1482,53 @@ export const controls = {
     description: t('Whether to display the legend (toggles)'),
   },
 
+  send_time_range: {
+    type: 'CheckboxControl',
+    label: t('Propagate'),
+    renderTrigger: true,
+    default: false,
+    description: t('Send range filter events to other charts'),
+  },
+
+  toggle_polygons: {
+    type: 'CheckboxControl',
+    label: t('Multiple filtering'),
+    renderTrigger: true,
+    default: true,
+    description: t('Allow sending multiple polygons as a filter event'),
+  },
+
+  num_buckets: {
+    type: 'SelectControl',
+    multi: false,
+    freeForm: true,
+    label: t('Number of buckets to group data'),
+    default: 5,
+    choices: formatSelectOptions([2, 3, 5, 10]),
+    description: t('How many buckets should the data be grouped in.'),
+    renderTrigger: true,
+  },
+
+  break_points: {
+    type: 'SelectControl',
+    multi: true,
+    freeForm: true,
+    label: t('Bucket break points'),
+    choices: formatSelectOptions([]),
+    description: t('List of n+1 values for bucketing metric into n buckets.'),
+    renderTrigger: true,
+  },
+
+  show_labels: {
+    type: 'CheckboxControl',
+    label: t('Show Labels'),
+    renderTrigger: true,
+    default: true,
+    description: t(
+      'Whether to display the labels. Note that the label only displays when the the 5% ' +
+      'threshold.'),
+  },
+
   show_values: {
     type: 'CheckboxControl',
     label: t('Show Values'),
@@ -1524,12 +1545,28 @@ export const controls = {
     description: t('Whether to display the metric name as a title'),
   },
 
+  show_trend_line: {
+    type: 'CheckboxControl',
+    label: t('Show Trend Line'),
+    renderTrigger: true,
+    default: true,
+    description: t('Whether to display the trend line'),
+  },
+
+  start_y_axis_at_zero: {
+    type: 'CheckboxControl',
+    label: t('Start y-axis at 0'),
+    renderTrigger: true,
+    default: true,
+    description: t('Start y-axis at zero. Uncheck to start y-axis at minimum value in the data.'),
+  },
+
   x_axis_showminmax: {
     type: 'CheckboxControl',
     label: t('X bounds'),
     renderTrigger: true,
     default: false,
-    description: t('Whether to display the min and max values of the X axis'),
+    description: t('Whether to display the min and max values of the X-axis'),
   },
 
   y_axis_showminmax: {
@@ -1537,14 +1574,14 @@ export const controls = {
     label: t('Y bounds'),
     renderTrigger: true,
     default: false,
-    description: t('Whether to display the min and max values of the Y axis'),
+    description: t('Whether to display the min and max values of the Y-axis'),
   },
 
   rich_tooltip: {
     type: 'CheckboxControl',
     label: t('Rich Tooltip'),
     renderTrigger: true,
-    default: false,
+    default: true,
     description: t('The rich tooltip shows a list of all series for that ' +
     'point in time'),
   },
@@ -1554,7 +1591,7 @@ export const controls = {
     label: t('Y Log Scale'),
     default: false,
     renderTrigger: true,
-    description: t('Use a log scale for the Y axis'),
+    description: t('Use a log scale for the Y-axis'),
   },
 
   x_log_scale: {
@@ -1562,7 +1599,7 @@ export const controls = {
     label: t('X Log Scale'),
     default: false,
     renderTrigger: true,
-    description: t('Use a log scale for the X axis'),
+    description: t('Use a log scale for the X-axis'),
   },
 
   log_scale: {
@@ -1596,32 +1633,38 @@ export const controls = {
     description: t('Compute the contribution to the total'),
   },
 
-  num_period_compare: {
-    type: 'TextControl',
-    label: t('Period Ratio'),
-    default: '',
-    isInt: true,
-    description: t('[integer] Number of period to compare against, ' +
-    'this is relative to the granularity selected'),
-  },
-
-  period_ratio_type: {
-    type: 'SelectControl',
-    label: t('Period Ratio Type'),
-    default: 'growth',
-    choices: formatSelectOptions(['factor', 'growth', 'value']),
-    description: t('`factor` means (new/previous), `growth` is ' +
-    '((new/previous) - 1), `value` is (new-previous)'),
-  },
-
   time_compare: {
-    type: 'TextControl',
+    type: 'SelectControl',
+    multi: true,
+    freeForm: true,
     label: t('Time Shift'),
-    default: null,
-    description: t('Overlay a timeseries from a ' +
-    'relative time period. Expects relative time delta ' +
+    choices: formatSelectOptions([
+      '1 day',
+      '1 week',
+      '28 days',
+      '30 days',
+      '52 weeks',
+      '1 year',
+    ]),
+    description: t('Overlay one or more timeseries from a ' +
+    'relative time period. Expects relative time deltas ' +
     'in natural language (example:  24 hours, 7 days, ' +
     '56 weeks, 365 days)'),
+  },
+
+  comparison_type: {
+    type: 'SelectControl',
+    label: t('Calculation type'),
+    default: 'values',
+    choices: [
+      ['values', 'Actual Values'],
+      ['absolute', 'Absolute difference'],
+      ['percentage', 'Percentage change'],
+      ['ratio', 'Ratio'],
+    ],
+    description: t('How to display time shifts: as individual lines; as the ' +
+    'absolute difference between the main time series and each time shift; ' +
+    'as the percentage change; or as the ratio between series and time shifts.'),
   },
 
   subheader: {
@@ -1737,6 +1780,17 @@ export const controls = {
     'Between 0 and 1.'),
   },
 
+  opacity: {
+    type: 'SliderControl',
+    label: t('Opacity'),
+    default: 80,
+    step: 1,
+    min: 0,
+    max: 100,
+    renderTrigger: true,
+    description: t('Opacity, expects values between 0 and 100'),
+  },
+
   viewport: {
     type: 'ViewportControl',
     label: t('Viewport'),
@@ -1751,28 +1805,37 @@ export const controls = {
   viewport_zoom: {
     type: 'TextControl',
     label: t('Zoom'),
+    renderTrigger: true,
     isFloat: true,
     default: 11,
     description: t('Zoom level of the map'),
     places: 8,
+    // Viewport zoom shouldn't prompt user to re-run query
+    dontRefreshOnChange: true,
   },
 
   viewport_latitude: {
     type: 'TextControl',
     label: t('Default latitude'),
+    renderTrigger: true,
     default: 37.772123,
     isFloat: true,
     description: t('Latitude of default viewport'),
     places: 8,
+    // Viewport latitude changes shouldn't prompt user to re-run query
+    dontRefreshOnChange: true,
   },
 
   viewport_longitude: {
     type: 'TextControl',
     label: t('Default longitude'),
+    renderTrigger: true,
     default: -122.405293,
     isFloat: true,
     description: t('Longitude of default viewport'),
     places: 8,
+    // Viewport longitude changes shouldn't prompt user to re-run query
+    dontRefreshOnChange: true,
   },
 
   render_while_dragging: {
@@ -1801,7 +1864,7 @@ export const controls = {
   color: {
     type: 'ColorPickerControl',
     label: t('Color'),
-    default: colorPrimary,
+    default: PRIMARY_COLOR,
     description: t('Pick a color'),
   },
 
@@ -1847,16 +1910,6 @@ export const controls = {
     description: t('Labels for the marker lines'),
   },
 
-  filters: {
-    type: 'FilterControl',
-    label: '',
-    default: [],
-    description: '',
-    mapStateToProps: state => ({
-      datasource: state.datasource,
-    }),
-  },
-
   annotation_layers: {
     type: 'AnnotationLayerControl',
     label: '',
@@ -1866,23 +1919,28 @@ export const controls = {
     tabOverride: 'data',
   },
 
-  having_filters: {
-    type: 'FilterControl',
-    label: '',
-    default: [],
+  adhoc_filters: {
+    type: 'AdhocFilterControl',
+    label: t('Filters'),
+    default: null,
     description: '',
     mapStateToProps: state => ({
-      choices: (state.datasource) ? state.datasource.metrics_combo
-        .concat(state.datasource.filterable_cols) : [],
+      columns: state.datasource ? state.datasource.columns : [],
+      savedMetrics: state.datasource ? state.datasource.metrics : [],
       datasource: state.datasource,
     }),
+    provideFormDataToProps: true,
+  },
+
+  filters: {
+    type: 'FilterPanel',
   },
 
   slice_id: {
     type: 'HiddenControl',
-    label: t('Slice ID'),
+    label: t('Chart ID'),
     hidden: true,
-    description: t('The id of the active slice'),
+    description: t('The id of the active chart'),
   },
 
   cache_timeout: {
@@ -1890,6 +1948,13 @@ export const controls = {
     label: t('Cache Timeout (seconds)'),
     hidden: true,
     description: t('The number of seconds before expiring the cache'),
+  },
+
+  url_params: {
+    type: 'HiddenControl',
+    label: t('URL Parameters'),
+    hidden: true,
+    description: t('Extra parameters for use in jinja templated queries'),
   },
 
   order_by_entity: {
@@ -1915,9 +1980,9 @@ export const controls = {
     label: t('Color Scheme'),
     default: 'bnbColors',
     renderTrigger: true,
-    choices: Object.keys(ALL_COLOR_SCHEMES).map(s => ([s, s])),
+    choices: () => categoricalSchemeRegistry.keys().map(s => ([s, s])),
     description: t('The color scheme for rendering chart'),
-    schemes: ALL_COLOR_SCHEMES,
+    schemes: () => categoricalSchemeRegistry.getMap(),
   },
 
   significance_level: {
@@ -2083,6 +2148,7 @@ export const controls = {
     choices: [
       ['polyline', 'Polyline'],
       ['json', 'JSON'],
+      ['geohash', 'geohash (square)'],
     ],
   },
 
@@ -2093,6 +2159,49 @@ export const controls = {
     isInt: true,
     default: 10,
     description: t('The width of the lines'),
+  },
+
+  line_charts: {
+    type: 'SelectAsyncControl',
+    multi: true,
+    label: t('Line charts'),
+    validators: [v.nonEmpty],
+    default: [],
+    description: t('Pick a set of line charts to layer on top of one another'),
+    dataEndpoint: '/sliceasync/api/read?_flt_0_viz_type=line&_flt_7_viz_type=line_multi',
+    placeholder: t('Select charts'),
+    onAsyncErrorMessage: t('Error while fetching charts'),
+    mutator: (data) => {
+      if (!data || !data.result) {
+        return [];
+      }
+      return data.result.map(o => ({ value: o.id, label: o.slice_name }));
+    },
+  },
+
+  line_charts_2: {
+    type: 'SelectAsyncControl',
+    multi: true,
+    label: t('Right Axis chart(s)'),
+    validators: [],
+    default: [],
+    description: t('Choose one or more charts for right axis'),
+    dataEndpoint: '/sliceasync/api/read?_flt_0_viz_type=line&_flt_7_viz_type=line_multi',
+    placeholder: t('Select charts'),
+    onAsyncErrorMessage: t('Error while fetching charts'),
+    mutator: (data) => {
+      if (!data || !data.result) {
+        return [];
+      }
+      return data.result.map(o => ({ value: o.id, label: o.slice_name }));
+    },
+  },
+
+  prefix_metric_with_slice_name: {
+    type: 'CheckboxControl',
+    label: t('Prefix metric name with slice name'),
+    default: false,
+    renderTrigger: true,
   },
 
   reverse_long_lat: {
@@ -2161,7 +2270,7 @@ export const controls = {
     label: t('Filled'),
     renderTrigger: true,
     description: t('Whether to fill the objects'),
-    default: false,
+    default: true,
   },
 
   normalized: {

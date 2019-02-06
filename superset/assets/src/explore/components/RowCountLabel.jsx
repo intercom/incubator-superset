@@ -1,8 +1,8 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { Label } from 'react-bootstrap';
+import { t } from '@superset-ui/translation';
 
-import { t } from '../../locales';
 import { defaultNumberFormatter } from '../../modules/utils';
 import TooltipWrapper from '../../components/TooltipWrapper';
 
@@ -10,14 +10,17 @@ import TooltipWrapper from '../../components/TooltipWrapper';
 const propTypes = {
   rowcount: PropTypes.number,
   limit: PropTypes.number,
+  rows: PropTypes.string,
+  suffix: PropTypes.string,
 };
 
 const defaultProps = {
+  suffix: t('rows'),
 };
 
-export default function RowCountLabel({ rowcount, limit }) {
+export default function RowCountLabel({ rowcount, limit, suffix }) {
   const limitReached = rowcount === limit;
-  const bsStyle = (limitReached || rowcount === 0) ? 'warning' : 'default';
+  const bsStyle = (limitReached || rowcount === 0) ? 'danger' : 'default';
   const formattedRowCount = defaultNumberFormatter(rowcount);
   const tooltip = (
     <span>
@@ -32,7 +35,7 @@ export default function RowCountLabel({ rowcount, limit }) {
         bsStyle={bsStyle}
         style={{ fontSize: '10px', marginRight: '5px', cursor: 'pointer' }}
       >
-        {formattedRowCount} rows
+        {formattedRowCount}{' '}{suffix}
       </Label>
     </TooltipWrapper>
   );
