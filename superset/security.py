@@ -1,3 +1,19 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
 # pylint: disable=C,R,W
 """A set of constants and methods to manage permissions and security"""
 import logging
@@ -83,36 +99,35 @@ class SupersetSecurityManager(SecurityManager):
         if schema:
             return '[{}].[{}]'.format(database, schema)
 
-    def can_access(self, permission_name, view_name, user=None):
+    def can_access(self, permission_name, view_name):
         """Protecting from has_access failing from missing perms/view"""
-        if not user:
-            user = g.user
+        user = g.user
         if user.is_anonymous:
             return self.is_item_public(permission_name, view_name)
         return self._has_view_access(user, permission_name, view_name)
 
-    def all_datasource_access(self, user=None):
+    def all_datasource_access(self):
         return self.can_access(
-            'all_datasource_access', 'all_datasource_access', user=user)
+            'all_datasource_access', 'all_datasource_access')
 
-    def database_access(self, database, user=None):
+    def database_access(self, database):
         return (
             self.can_access(
-                'all_database_access', 'all_database_access', user=user) or
-            self.can_access('database_access', database.perm, user=user)
+                'all_database_access', 'all_database_access') or
+            self.can_access('database_access', database.perm)
         )
 
-    def schema_access(self, datasource, user=None):
+    def schema_access(self, datasource):
         return (
-            self.database_access(datasource.database, user=user) or
-            self.all_datasource_access(user=user) or
-            self.can_access('schema_access', datasource.schema_perm, user=user)
+            self.database_access(datasource.database) or
+            self.all_datasource_access() or
+            self.can_access('schema_access', datasource.schema_perm)
         )
 
-    def datasource_access(self, datasource, user=None):
+    def datasource_access(self, datasource):
         return (
-            self.schema_access(datasource, user=user) or
-            self.can_access('datasource_access', datasource.perm, user=user)
+            self.schema_access(datasource) or
+            self.can_access('datasource_access', datasource.perm)
         )
 
     def get_datasource_access_error_msg(self, datasource):
@@ -166,7 +181,7 @@ class SupersetSecurityManager(SecurityManager):
             database, table_name, schema=table_schema)
 
     def rejected_datasources(self, sql, database, schema):
-        superset_query = sql_parse.SupersetQuery(sql)
+        superset_query = sql_parse.ParsedQuery(sql)
         return [
             t for t in superset_query.tables if not
             self.datasource_access_by_fullname(database, t, schema)]
@@ -430,8 +445,8 @@ class SupersetSecurityManager(SecurityManager):
                 ),
             )
 
-    def assert_datasource_permission(self, datasource, user=None):
-        if not self.datasource_access(datasource, user):
+    def assert_datasource_permission(self, datasource):
+        if not self.datasource_access(datasource):
             raise SupersetSecurityException(
                 self.get_datasource_access_error_msg(datasource),
                 self.get_datasource_access_link(datasource),

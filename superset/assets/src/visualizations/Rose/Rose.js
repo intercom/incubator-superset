@@ -1,10 +1,30 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 /* eslint no-use-before-define: ["error", { "functions": false }] */
 import d3 from 'd3';
 import PropTypes from 'prop-types';
 import nv from 'nvd3';
 import { CategoricalColorNamespace } from '@superset-ui/color';
-import { d3TimeFormatPreset } from '../../modules/utils';
+import { getNumberFormatter } from '@superset-ui/number-format';
+import { getTimeFormatter } from '@superset-ui/time-format';
 import './Rose.css';
+import { safeStringify } from '../../utils/safeStringify';
 
 const propTypes = {
   // Data is an object hashed by numeric value, perhaps timestamp
@@ -58,8 +78,8 @@ function Rose(element, props) {
     .sort((a, b) => a - b);
   const numGrains = times.length;
   const numGroups = datum[times[0]].length;
-  const format = d3.format(numberFormat);
-  const timeFormat = d3TimeFormatPreset(dateTimeFormat);
+  const format = getNumberFormatter(numberFormat);
+  const timeFormat = getTimeFormatter(dateTimeFormat);
   const colorFn = CategoricalColorNamespace.getScale(colorScheme);
 
   d3.select('.nvtooltip').remove();
@@ -288,7 +308,7 @@ function Rose(element, props) {
   let inTransition = false;
   const ae = roseWrap
     .selectAll('g')
-    .data(JSON.parse(JSON.stringify(arcSt.data))) // deep copy data state
+    .data(JSON.parse(safeStringify(arcSt.data))) // deep copy data state
     .enter()
     .append('g')
     .attr('class', 'segment')
@@ -300,7 +320,7 @@ function Rose(element, props) {
 
   const labels = labelsWrap
     .selectAll('g')
-    .data(JSON.parse(JSON.stringify(arcSt.labels)))
+    .data(JSON.parse(safeStringify(arcSt.labels)))
     .enter()
     .append('g')
     .attr('class', 'roseLabel')
@@ -314,7 +334,7 @@ function Rose(element, props) {
 
   const groupLabels = groupLabelsWrap
     .selectAll('g')
-    .data(JSON.parse(JSON.stringify(arcSt.groupLabels)))
+    .data(JSON.parse(safeStringify(arcSt.groupLabels)))
     .enter()
     .append('g');
 

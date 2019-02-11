@@ -1,11 +1,30 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 import d3 from 'd3';
 import $ from 'jquery';
 import PropTypes from 'prop-types';
 import dt from 'datatables.net-bs';
 import 'datatables.net-bs/css/dataTables.bootstrap.css';
 import dompurify from 'dompurify';
-import { format as d3Format } from 'd3-format';
-import { fixDataTableBodyHeight, d3TimeFormatPreset } from '../../modules/utils';
+import { getNumberFormatter, NumberFormats } from '@superset-ui/number-format';
+import { getTimeFormatter } from '@superset-ui/time-format';
+import { fixDataTableBodyHeight } from '../../modules/utils';
 import './Table.css';
 
 dt(window, $);
@@ -46,8 +65,8 @@ const propTypes = {
   ]),
 };
 
-const formatValue = d3Format(',.0d');
-const formatPercent = d3Format('.3p');
+const formatValue = getNumberFormatter(NumberFormats.INTEGER);
+const formatPercent = getNumberFormatter(NumberFormats.PERCENT_3_POINT);
 function NOOP() {}
 
 function TableVis(element, props) {
@@ -96,7 +115,7 @@ function TableVis(element, props) {
     }
   }
 
-  const tsFormatter = d3TimeFormatPreset(tableTimestampFormat);
+  const tsFormatter = getTimeFormatter(tableTimestampFormat);
 
   const div = d3.select(element);
   div.html('');
@@ -130,7 +149,7 @@ function TableVis(element, props) {
         html = `<span class="like-pre">${dompurify.sanitize(val)}</span>`;
       }
       if (isMetric) {
-        html = d3Format(format || '0.3s')(val);
+        html = getNumberFormatter(format)(val);
       }
       if (key[0] === '%') {
         html = formatPercent(val);
@@ -173,7 +192,15 @@ function TableVis(element, props) {
       return null;
     })
     .classed('text-right', d => d.isMetric)
-    .attr('title', d => (!Number.isNaN(d.val) ? formatValue(d.val) : null))
+    .attr('title', (d) => {
+      if (typeof d.val === 'string') {
+        return d.val;
+      }
+      if (!Number.isNaN(d.val)) {
+        return formatValue(d.val);
+      }
+      return null;
+    })
     .attr('data-sort', d => (d.isMetric) ? d.val : null)
     // Check if the dashboard currently has a filter for each row
     .classed('filtered', d =>

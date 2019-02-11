@@ -1,3 +1,21 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 import { throttle } from 'lodash';
 import d3 from 'd3';
 import nv from 'nvd3';
@@ -6,11 +24,11 @@ import moment from 'moment';
 import PropTypes from 'prop-types';
 import { t } from '@superset-ui/translation';
 import { CategoricalColorNamespace } from '@superset-ui/color';
+import { getNumberFormatter, NumberFormats } from '@superset-ui/number-format';
+import { getTimeFormatter, smartDateVerboseFormatter } from '@superset-ui/time-format';
 import 'nvd3/build/nv.d3.min.css';
 
 import ANNOTATION_TYPES, { applyNativeColumns } from '../../modules/AnnotationTypes';
-import { formatDateVerbose } from '../../modules/dates';
-import { d3TimeFormatPreset, d3FormatPreset } from '../../modules/utils';
 import { isTruthy } from '../../utils/common';
 import {
   cleanColorInput,
@@ -20,6 +38,7 @@ import {
   generateMultiLineTooltipContent,
   generateRichLineTooltipContent,
   getMaxLabelSize,
+  getTimeOrNumberFormatter,
   hideTooltips,
   tipFactory,
   tryNumify,
@@ -126,6 +145,7 @@ const propTypes = {
     'dual_line',
   ]),
   xAxisFormat: PropTypes.string,
+  numberFormat: PropTypes.string,
   xAxisLabel: PropTypes.string,
   xAxisShowMinMax: PropTypes.bool,
   xIsLogScale: PropTypes.bool,
@@ -145,7 +165,7 @@ const propTypes = {
   // 'bar', 'dist-bar' or 'area'
   showControls: PropTypes.bool,
   // 'line' only
-  showBrush: PropTypes.oneOf([true, false, 'auto']),
+  showBrush: PropTypes.oneOf([true, 'yes', false, 'no', 'auto']),
   onBrushEnd: PropTypes.func,
   // 'line-multi' or 'dual-line'
   yAxis2Format: PropTypes.string,
@@ -175,7 +195,7 @@ const propTypes = {
 };
 
 const NOOP = () => {};
-const formatter = d3.format('.3s');
+const formatter = getNumberFormatter();
 
 function nvd3Vis(element, props) {
   const {
@@ -212,6 +232,7 @@ function nvd3Vis(element, props) {
     useRichTooltip,
     vizType,
     xAxisFormat,
+    numberFormat,
     xAxisLabel,
     xAxisShowMinMax = false,
     xField,
@@ -263,6 +284,7 @@ function nvd3Vis(element, props) {
       isTruthy(showBrush) ||
       (showBrush === 'auto' && maxHeight >= MIN_HEIGHT_FOR_BRUSH && xTicksLayout !== '45°')
     );
+    const numberFormatter = getNumberFormatter(numberFormat);
 
     switch (vizType) {
       case 'line':
@@ -279,6 +301,7 @@ function nvd3Vis(element, props) {
         }
         chart.xScale(d3.time.scale.utc());
         chart.interpolate(lineInterpolation);
+        chart.clipEdge(false);
         break;
 
       case 'time_pivot':
@@ -329,7 +352,7 @@ function nvd3Vis(element, props) {
       case 'pie':
         chart = nv.models.pieChart();
         colorKey = 'x';
-        chart.valueFormat(formatter);
+        chart.valueFormat(numberFormatter);
         if (isDonut) {
           chart.donut(true);
         }
@@ -339,19 +362,17 @@ function nvd3Vis(element, props) {
         chart.labelThreshold(0.05);
         chart.cornerRadius(true);
 
-        if (pieLabelType !== 'key_percent' && pieLabelType !== 'key_value') {
+        if (['key', 'value', 'percent'].indexOf(pieLabelType) >= 0) {
           chart.labelType(pieLabelType);
         } else if (pieLabelType === 'key_value') {
-          chart.labelType(d => `${d.data.x}: ${d3.format('.3s')(d.data.y)}`);
-        }
-
-        if (pieLabelType === 'percent' || pieLabelType === 'key_percent') {
+          chart.labelType(d => `${d.data.x}: ${numberFormatter(d.data.y)}`);
+        } else if (pieLabelType === 'key_percent') {
           const total = d3.sum(data, d => d.y);
           chart.tooltip.valueFormatter(d => `${((d / total) * 100).toFixed()}%`);
-          if (pieLabelType === 'key_percent') {
-            chart.labelType(d => `${d.data.x}: ${((d.data.y / total) * 100).toFixed()}%`);
-          }
+          chart.labelType(d => `${d.data.x}: ${((d.data.y / total) * 100).toFixed()}%`);
         }
+        // Pie chart does not need top margin
+        chart.margin({ top: 0 });
         break;
 
       case 'column':
@@ -377,8 +398,8 @@ function nvd3Vis(element, props) {
             xField,
             yField,
             sizeField,
-            xFormatter: d3FormatPreset(xAxisFormat),
-            yFormatter: d3FormatPreset(yAxisFormat),
+            xFormatter: getTimeOrNumberFormatter(xAxisFormat),
+            yFormatter: getTimeOrNumberFormatter(yAxisFormat),
             sizeFormatter: formatter,
           }));
         chart.pointRange([5, maxBubbleSize ** 2]);
@@ -406,8 +427,8 @@ function nvd3Vis(element, props) {
       default:
         throw new Error('Unrecognized visualization for nvd3' + vizType);
     }
-    // Assuming the container has padding already
-    chart.margin({ top: 0, left: 0, right: 0, bottom: 0 });
+    // Assuming the container has padding already other than for top margin
+    chart.margin({ left: 0, right: 0, bottom: 0 });
 
     if (showBarValue) {
       setTimeout(function () {
@@ -458,11 +479,11 @@ function nvd3Vis(element, props) {
 
     let xAxisFormatter;
     if (isTimeSeries) {
-      xAxisFormatter = d3TimeFormatPreset(xAxisFormat);
+      xAxisFormatter = getTimeFormatter(xAxisFormat);
       // In tooltips, always use the verbose time format
-      chart.interactiveLayer.tooltip.headerFormatter(formatDateVerbose);
+      chart.interactiveLayer.tooltip.headerFormatter(smartDateVerboseFormatter);
     } else {
-      xAxisFormatter = d3FormatPreset(xAxisFormat);
+      xAxisFormatter = getTimeOrNumberFormatter(xAxisFormat);
     }
     if (chart.x2Axis && chart.x2Axis.tickFormat) {
       chart.x2Axis.tickFormat(xAxisFormatter);
@@ -472,11 +493,11 @@ function nvd3Vis(element, props) {
       chart.xAxis.tickFormat(xAxisFormatter);
     }
 
-    let yAxisFormatter = d3FormatPreset(yAxisFormat);
+    let yAxisFormatter = getTimeOrNumberFormatter(yAxisFormat);
     if (chart.yAxis && chart.yAxis.tickFormat) {
       if (contribution || comparisonType === 'percentage') {
         // When computing a "Percentage" or "Contribution" selected, we force a percentage format
-        yAxisFormatter = d3.format('.1%');
+        yAxisFormatter = getNumberFormatter(NumberFormats.PERCENT_1_POINT);
       }
       chart.yAxis.tickFormat(yAxisFormatter);
     }
@@ -514,13 +535,13 @@ function nvd3Vis(element, props) {
       chart.useInteractiveGuideline(true);
       if (vizType === 'line') {
         chart.interactiveLayer.tooltip.contentGenerator(d =>
-          generateRichLineTooltipContent(d, yAxisFormatter));
+          generateRichLineTooltipContent(d, xAxisFormatter, yAxisFormatter));
       }
     }
 
     if (isVizTypes(['dual_line', 'line_multi'])) {
-      const yAxisFormatter1 = d3.format(yAxisFormat);
-      const yAxisFormatter2 = d3.format(yAxis2Format);
+      const yAxisFormatter1 = getNumberFormatter(yAxisFormat);
+      const yAxisFormatter2 = getNumberFormatter(yAxis2Format);
       chart.yAxis1.tickFormat(yAxisFormatter1);
       chart.yAxis2.tickFormat(yAxisFormatter2);
       const yAxisFormatters = data.map(datum => (
@@ -545,6 +566,14 @@ function nvd3Vis(element, props) {
       .attr('height', height)
       .attr('width', width)
       .call(chart);
+
+    if (xLabelRotation > 0) {
+      // shift labels to the left so they look better
+      const xTicks = svg.select('.nv-x.nv-axis > g').selectAll('g');
+      xTicks
+        .selectAll('text')
+        .attr('dx', -6.5);
+    }
 
     // align yAxis1 and yAxis2 ticks
     if (isVizTypes(['dual_line', 'line_multi'])) {
@@ -613,8 +642,12 @@ function nvd3Vis(element, props) {
         margins.right = Math.max(20, maxXAxisLabelHeight / 2) + marginPad;
       }
       if (xLabelRotation === 45) {
-        margins.bottom = maxXAxisLabelHeight + marginPad;
-        margins.right = maxXAxisLabelHeight + marginPad;
+        margins.bottom = (
+          maxXAxisLabelHeight * Math.sin(Math.PI * xLabelRotation / 180)
+        ) + marginPad;
+        margins.right = (
+          maxXAxisLabelHeight * Math.cos(Math.PI * xLabelRotation / 180)
+        ) + marginPad;
       } else if (staggerLabels) {
         margins.bottom = 40;
       }
