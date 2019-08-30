@@ -34,8 +34,8 @@ export default {
       label: t('Chart Options'),
       expanded: true,
       controlSetRows: [
-        ['color_scheme'],
-        ['whisker_options'],
+        ['color_scheme', 'label_colors'],
+        ['whisker_options', 'x_ticks_layout'],
       ],
     },
   ],

@@ -24,7 +24,8 @@ import { shallow } from 'enzyme';
 
 import { STATUS_OPTIONS } from '../../../src/SqlLab/constants';
 import { initialState } from './fixtures';
-import SouthPane from '../../../src/SqlLab/components/SouthPane';
+import SouthPaneContainer, { SouthPane } from '../../../src/SqlLab/components/SouthPane';
+import ResultSet from '../../../src/SqlLab/components/ResultSet';
 
 describe('SouthPane', () => {
   const middlewares = [thunk];
@@ -32,7 +33,13 @@ describe('SouthPane', () => {
   const store = mockStore(initialState);
 
   const mockedProps = {
-    editorQueries: [],
+    editorQueries: [
+      { cached: false, changedOn: Date.now(), db: 'main', dbId: 1, id: 'LCly_kkIN', startDttm: Date.now() },
+      { cached: false, changedOn: 1559238500401, db: 'main', dbId: 1, id: 'lXJa7F9_r', startDttm: 1559238500401 },
+      { cached: false, changedOn: 1559238506925, db: 'main', dbId: 1, id: '2g2_iRFMl', startDttm: 1559238506925 },
+      { cached: false, changedOn: 1559238516395, db: 'main', dbId: 1, id: 'erWdqEWPm', startDttm: 1559238516395 },
+    ],
+    latestQueryId: 'LCly_kkIN',
     dataPreviewQueries: [],
     actions: {},
     activeSouthPaneTab: '',
@@ -42,14 +49,24 @@ describe('SouthPane', () => {
   };
 
   const getWrapper = () => (
-    shallow(<SouthPane {...mockedProps} />, {
+    shallow(<SouthPaneContainer {...mockedProps} />, {
       context: { store },
     }).dive());
 
   let wrapper;
+
+  beforeAll(() => {
+    jest.spyOn(SouthPane.prototype, 'getSouthPaneHeight').mockImplementation(() => 500);
+  });
+
   it('should render offline when the state is offline', () => {
     wrapper = getWrapper();
     wrapper.setProps({ offline: true });
     expect(wrapper.find('.m-r-3').render().text()).toBe(STATUS_OPTIONS.offline);
+  });
+  it('should pass latest query down to ResultSet component', () => {
+    wrapper = getWrapper();
+    expect(wrapper.find(ResultSet)).toHaveLength(1);
+    expect(wrapper.find(ResultSet).props().query.id).toEqual(mockedProps.latestQueryId);
   });
 });

@@ -20,7 +20,6 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { Button } from 'react-bootstrap';
 import { t } from '@superset-ui/translation';
-
 import TableElement from './TableElement';
 import TableSelector from '../../components/TableSelector';
 
@@ -34,9 +33,10 @@ const propTypes = {
 };
 
 const defaultProps = {
-  tables: [],
   actions: {},
+  height: 500,
   offline: false,
+  tables: [],
 };
 
 export default class SqlEditorLeftBar extends React.PureComponent {
@@ -50,12 +50,20 @@ export default class SqlEditorLeftBar extends React.PureComponent {
     };
     this.resetState = this.resetState.bind(this);
     this.onSchemaChange = this.onSchemaChange.bind(this);
+    this.onSchemasLoad = this.onSchemasLoad.bind(this);
+    this.onTablesLoad = this.onTablesLoad.bind(this);
     this.onDbChange = this.onDbChange.bind(this);
     this.getDbList = this.getDbList.bind(this);
     this.onTableChange = this.onTableChange.bind(this);
   }
   onSchemaChange(schema) {
     this.props.actions.queryEditorSetSchema(this.props.queryEditor, schema);
+  }
+  onSchemasLoad(schemas) {
+    this.props.actions.queryEditorSetSchemaOptions(this.props.queryEditor, schemas);
+  }
+  onTablesLoad(tables) {
+    this.props.actions.queryEditorSetTableOptions(this.props.queryEditor, tables);
   }
   onDbChange(db) {
     this.props.actions.queryEditorSetDb(this.props.queryEditor, db.id);
@@ -84,17 +92,10 @@ export default class SqlEditorLeftBar extends React.PureComponent {
       this.setState({ tableName: '' });
       return;
     }
-    const namePieces = tableOpt.value.split('.');
-    let tableName = namePieces[0];
-    let schemaName = this.props.queryEditor.schema;
-    if (namePieces.length === 1) {
-      this.setState({ tableName });
-    } else {
-      schemaName = namePieces[0];
-      tableName = namePieces[1];
-      this.setState({ tableName });
-      this.props.actions.queryEditorSetSchema(this.props.queryEditor, schemaName);
-    }
+    const schemaName = tableOpt.value.schema;
+    const tableName = tableOpt.value.table;
+    this.setState({ tableName });
+    this.props.actions.queryEditorSetSchema(this.props.queryEditor, schemaName);
     this.props.actions.addTable(this.props.queryEditor, tableName, schemaName);
   }
 
@@ -106,26 +107,26 @@ export default class SqlEditorLeftBar extends React.PureComponent {
     const tableMetaDataHeight = this.props.height - 130; // 130 is the height of the selects above
     const qe = this.props.queryEditor;
     return (
-      <div className="clearfix">
+      <div className="SqlEditorLeftBar">
         <TableSelector
           dbId={qe.dbId}
           schema={qe.schema}
           onDbChange={this.onDbChange}
           onSchemaChange={this.onSchemaChange}
+          onSchemasLoad={this.onSchemasLoad}
+          onTablesLoad={this.onTablesLoad}
           getDbList={this.getDbList}
           onTableChange={this.onTableChange}
           tableNameSticky={false}
           database={this.props.database}
           handleError={this.props.actions.addDangerToast}
         />
-        <hr />
-        <div className="m-t-5">
-          <div className="scrollbar-container">
-            <div className="scrollbar-content" style={{ height: tableMetaDataHeight }}>
-              {this.props.tables.map(table => (
-                <TableElement table={table} key={table.id} actions={this.props.actions} />
-              ))}
-            </div>
+        <div className="divider" />
+        <div className="scrollbar-container">
+          <div className="scrollbar-content" style={{ height: tableMetaDataHeight }}>
+            {this.props.tables.map(table => (
+              <TableElement table={table} key={table.id} actions={this.props.actions} />
+            ))}
           </div>
         </div>
         {shouldShowReset &&

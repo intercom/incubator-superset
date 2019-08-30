@@ -18,7 +18,7 @@
  */
 import { Provider } from 'react-redux';
 import React from 'react';
-import { mount } from 'enzyme';
+import { mount, shallow } from 'enzyme';
 import sinon from 'sinon';
 import { Tabs as BootstrapTabs, Tab as BootstrapTab } from 'react-bootstrap';
 
@@ -52,6 +52,7 @@ describe('Tabs', () => {
     onChangeTab() {},
     deleteComponent() {},
     updateComponents() {},
+    logEvent() {},
   };
 
   function setup(overrideProps) {
@@ -130,6 +131,17 @@ describe('Tabs', () => {
     expect(onChangeTab.callCount).toBe(1);
   });
 
+  it('should not call onChangeTab when anchor link is clicked', () => {
+    const onChangeTab = sinon.spy();
+    const wrapper = setup({ editMode: true, onChangeTab });
+    wrapper
+      .find('.dashboard-component-tabs .nav-tabs a .short-link-trigger')
+      .at(1) // will not call if it is already selected
+      .simulate('click');
+
+    expect(onChangeTab.callCount).toBe(0);
+  });
+
   it('should render a HoverMenu in editMode', () => {
     let wrapper = setup();
     expect(wrapper.find(HoverMenu)).toHaveLength(0);
@@ -152,5 +164,21 @@ describe('Tabs', () => {
     wrapper.find(DeleteComponentButton).simulate('click');
 
     expect(deleteComponent.callCount).toBe(1);
+  });
+
+  it('should direct display direct-link tab', () => {
+    let wrapper = shallow(<Tabs {...props} />);
+    // default show first tab child
+    expect(wrapper.state('tabIndex')).toBe(0);
+
+    // display child in directPathToChild list
+    const directPathToChild = dashboardLayoutWithTabs.present.ROW_ID2.parents.slice();
+    const directLinkProps = {
+      ...props,
+      directPathToChild,
+    };
+
+    wrapper = shallow(<Tabs {...directLinkProps} />);
+    expect(wrapper.state('tabIndex')).toBe(1);
   });
 });

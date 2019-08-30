@@ -43,7 +43,7 @@ import withToasts from '../messageToasts/enhancers/withToasts';
 import './main.css';
 
 const checkboxGenerator = (d, onChange) => <CheckboxControl value={d} onChange={onChange} />;
-const DATA_TYPES = ['STRING', 'NUMBER', 'DATETIME'];
+const DATA_TYPES = ['STRING', 'NUMERIC', 'DATETIME'];
 
 function CollectionTabTitle({ title, collection }) {
   return (
@@ -83,11 +83,16 @@ function ColumnCollectionTable({
               label={t('Label')}
               control={<TextControl />}
             />
+            <Field
+              fieldKey="description"
+              label={t('Description')}
+              control={<TextControl />}
+            />
             {allowEditDataType &&
               <Field
                 fieldKey="type"
                 label={t('Data Type')}
-                control={<SelectControl choices={DATA_TYPES} name="type" />}
+                control={<SelectControl choices={DATA_TYPES} name="type" freeForm />}
               />}
             <Field
               fieldKey="python_date_format"
@@ -99,28 +104,7 @@ function ColumnCollectionTable({
                     {t('python datetime string pattern')}
                   </a>
                   {t(` expression. If time is stored in epoch format, put \`epoch_s\` or
-                      \`epoch_ms\`. Leave \`Database Expression\`
-                      below empty if timestamp is stored in '
-                      String or Integer(epoch) type`)}
-                </div>
-              }
-              control={<TextControl />}
-            />
-            <Field
-              fieldKey="database_expression"
-              label={t('Database Expression')}
-              descr={
-                <div>
-                  {t(`
-                    The database expression to cast internal datetime
-                    constants to database date/timestamp type according to the DBAPI.
-                    The expression should follow the pattern of
-                    %Y-%m-%d %H:%M:%S, based on different DBAPI.
-                    The string should be a python string formatter
-                    \`Ex: TO_DATE('{}', 'YYYY-MM-DD HH24:MI:SS')\` for Oracle
-                    Superset uses default expression based on DB URI if this
-                    field is blank.
-                  `)}
+                      \`epoch_ms\`.`)}
                 </div>
               }
               control={<TextControl />}
@@ -448,6 +432,14 @@ export class DatasourceEditor extends React.PureComponent {
           label={t('Hours offset')}
           control={<TextControl />}
         />
+        { this.state.isSqla &&
+          <Field
+            fieldKey="template_params"
+            label={t('Template parameters')}
+            descr={t('A set of parameters that become available in the query using Jinja templating syntax')}
+            control={<TextControl />}
+          />
+        }
       </Fieldset>);
   }
 
@@ -502,6 +494,11 @@ export class DatasourceEditor extends React.PureComponent {
         expandFieldset={
           <FormContainer>
             <Fieldset>
+              <Field
+                fieldKey="verbose_name"
+                label={t('Label')}
+                control={<TextControl />}
+              />
               <Field
                 fieldKey="description"
                 label={t('Description')}

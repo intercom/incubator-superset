@@ -73,6 +73,7 @@ export default class ResultSet extends React.PureComponent {
     // when new results comes in, save them locally and clear in store
     if (this.props.cache && (!nextProps.query.cached)
       && nextProps.query.results
+      && nextProps.query.results.data
       && nextProps.query.results.data.length > 0) {
       this.setState(
         { data: nextProps.query.results.data },
@@ -117,6 +118,10 @@ export default class ResultSet extends React.PureComponent {
   }
   renderControls() {
     if (this.props.search || this.props.visualize || this.props.csv) {
+      let data = this.props.query.results.data;
+      if (this.props.cache && this.props.query.cached) {
+        data = this.state.data;
+      }
       return (
         <div className="ResultSetControls">
           <div className="clearfix">
@@ -134,7 +139,7 @@ export default class ResultSet extends React.PureComponent {
                   </Button>}
 
                 <CopyToClipboard
-                  text={prepareCopyToClipboardTabularData(this.props.query.results.data)}
+                  text={prepareCopyToClipboardTabularData(data)}
                   wrapped={false}
                   copyNode={
                     <Button bsSize="small">
@@ -149,8 +154,9 @@ export default class ResultSet extends React.PureComponent {
                 <input
                   type="text"
                   onChange={this.changeSearch.bind(this)}
+                  value={this.state.searchText}
                   className="form-control input-sm"
-                  placeholder={t('Search Results')}
+                  placeholder={t('Filter Results')}
                 />
               }
             </div>
@@ -202,8 +208,11 @@ export default class ResultSet extends React.PureComponent {
         data = results.data;
       }
       if (data && data.length > 0) {
+        const expandedColumns = results.expanded_columns
+          ? results.expanded_columns.map(col => col.name)
+          : [];
         return (
-          <div>
+          <React.Fragment>
             {this.renderControls.bind(this)()}
             {sql}
             <FilterableTable
@@ -211,17 +220,19 @@ export default class ResultSet extends React.PureComponent {
               orderedColumnKeys={results.columns.map(col => col.name)}
               height={height}
               filterText={this.state.searchText}
+              expandedColumns={expandedColumns}
             />
-          </div>
+          </React.Fragment>
         );
       } else if (data && data.length === 0) {
-        return <Alert bsStyle="warning">The query returned no data</Alert>;
+        return <Alert bsStyle="warning">{t('The query returned no data')}</Alert>;
       }
     }
     if (query.cached) {
       return (
         <Button
           bsSize="sm"
+          className="fetch"
           bsStyle="primary"
           onClick={this.reFetchQueryResults.bind(this, query)}
         >
@@ -236,7 +247,7 @@ export default class ResultSet extends React.PureComponent {
         <ProgressBar
           striped
           now={query.progress}
-          label={`${query.progress}%`}
+          label={`${query.progress.toFixed(0)}%`}
         />);
     }
     if (query.trackingUrl) {

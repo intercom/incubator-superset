@@ -17,6 +17,7 @@
 # under the License.
 # pylint: disable=C,R,W
 #
+
 # Copyright (C) 2016 Andi Albrecht, albrecht.andi@gmail.com
 #
 # This example is part of python-sqlparse and is released under
@@ -26,7 +27,7 @@
 # SELECT statements.
 #
 # See:
-# http://groups.google.com/group/sqlparse/browse_thread/thread/b0bd9a022e9d4895
+# https://groups.google.com/forum/#!topic/sqlparse/sL2aAi6dSJU
 import sqlparse
 from sqlparse.sql import Identifier, IdentifierList
 from sqlparse.tokens import DML, Keyword
@@ -36,7 +37,7 @@ def is_subselect(parsed):
     if not parsed.is_group():
         return False
     for item in parsed.tokens:
-        if item.ttype is DML and item.value.upper() == 'SELECT':
+        if item.ttype is DML and item.value.upper() == "SELECT":
             return True
     return False
 
@@ -52,7 +53,7 @@ def extract_from_part(parsed):
                 raise StopIteration
             else:
                 yield item
-        elif item.ttype is Keyword and item.value.upper() == 'FROM':
+        elif item.ttype is Keyword and item.value.upper() == "FROM":
             from_seen = True
 
 

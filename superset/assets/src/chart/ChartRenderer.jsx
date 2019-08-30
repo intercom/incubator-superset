@@ -20,16 +20,16 @@ import dompurify from 'dompurify';
 import { snakeCase } from 'lodash';
 import PropTypes from 'prop-types';
 import React from 'react';
-import { ChartProps, SuperChart } from '@superset-ui/chart';
+import { SuperChart } from '@superset-ui/chart';
 import { Tooltip } from 'react-bootstrap';
-import { Logger, LOG_ACTIONS_RENDER_CHART } from '../logger';
+import { Logger, LOG_ACTIONS_RENDER_CHART } from '../logger/LogUtils';
 
 const propTypes = {
   annotationData: PropTypes.object,
   actions: PropTypes.object,
   chartId: PropTypes.number.isRequired,
   datasource: PropTypes.object.isRequired,
-  filters: PropTypes.object,
+  initialValues: PropTypes.object,
   formData: PropTypes.object.isRequired,
   height: PropTypes.number,
   width: PropTypes.number,
@@ -50,7 +50,7 @@ const BLANK = {};
 
 const defaultProps = {
   addFilter: () => BLANK,
-  filters: BLANK,
+  initialValues: BLANK,
   setControlValue() {},
   triggerRender: false,
 };
@@ -60,7 +60,7 @@ class ChartRenderer extends React.Component {
     super(props);
     this.state = {};
 
-    this.createChartProps = ChartProps.createSelector();
+    this.hasQueryResponseChange = false;
 
     this.setTooltip = this.setTooltip.bind(this);
     this.handleAddFilter = this.handleAddFilter.bind(this);
@@ -68,52 +68,32 @@ class ChartRenderer extends React.Component {
     this.handleRenderFailure = this.handleRenderFailure.bind(this);
   }
 
-  shouldComponentUpdate(nextProps) {
-    if (
+  shouldComponentUpdate(nextProps, nextState) {
+    const resultsReady =
       nextProps.queryResponse &&
       ['success', 'rendered'].indexOf(nextProps.chartStatus) > -1 &&
       !nextProps.queryResponse.error &&
-      !nextProps.refreshOverlayVisible &&
-      (nextProps.annotationData !== this.props.annotationData ||
-        nextProps.queryResponse !== this.props.queryResponse ||
+      !nextProps.refreshOverlayVisible;
+
+    if (resultsReady) {
+      this.hasQueryResponseChange =
+        nextProps.queryResponse !== this.props.queryResponse;
+
+      if (this.hasQueryResponseChange ||
+        nextProps.annotationData !== this.props.annotationData ||
         nextProps.height !== this.props.height ||
         nextProps.width !== this.props.width ||
-        nextProps.triggerRender)
-    ) {
-      return true;
+        nextState.tooltip !== this.state.tooltip ||
+        nextProps.triggerRender ||
+        nextProps.formData.color_scheme !== this.props.formData.color_scheme) {
+        return true;
+      }
     }
     return false;
   }
 
   setTooltip(tooltip) {
     this.setState({ tooltip });
-  }
-
-  prepareChartProps() {
-    const {
-      width,
-      height,
-      annotationData,
-      datasource,
-      filters,
-      formData,
-      queryResponse,
-      setControlValue,
-    } = this.props;
-
-    return this.createChartProps({
-      width,
-      height,
-      annotationData,
-      datasource,
-      filters,
-      formData,
-      onAddFilter: this.handleAddFilter,
-      onError: this.handleRenderFailure,
-      payload: queryResponse,
-      setControlValue,
-      setTooltip: this.setTooltip,
-    });
   }
 
   handleAddFilter(col, vals, merge = true, refresh = true) {
@@ -126,12 +106,17 @@ class ChartRenderer extends React.Component {
       actions.chartRenderingSucceeded(chartId);
     }
 
-    Logger.append(LOG_ACTIONS_RENDER_CHART, {
-      slice_id: chartId,
-      viz_type: vizType,
-      start_offset: this.renderStartTime,
-      duration: Logger.getTimestamp() - this.renderStartTime,
-    });
+    // only log chart render time which is triggered by query results change
+    // currently we don't log chart re-render time, like window resize etc
+    if (this.hasQueryResponseChange) {
+      actions.logEvent(LOG_ACTIONS_RENDER_CHART, {
+        slice_id: chartId,
+        viz_type: vizType,
+        start_offset: this.renderStartTime,
+        ts: new Date().getTime(),
+        duration: Logger.getTimestamp() - this.renderStartTime,
+      });
+    }
   }
 
   handleRenderFailure(error, info) {
@@ -139,13 +124,17 @@ class ChartRenderer extends React.Component {
     console.warn(error); // eslint-disable-line
     actions.chartRenderingFailed(error.toString(), chartId, info ? info.componentStack : null);
 
-    Logger.append(LOG_ACTIONS_RENDER_CHART, {
-      slice_id: chartId,
-      has_err: true,
-      error_details: error.toString(),
-      start_offset: this.renderStartTime,
-      duration: Logger.getTimestamp() - this.renderStartTime,
-    });
+    // only trigger render log when query is changed
+    if (this.hasQueryResponseChange) {
+      actions.logEvent(LOG_ACTIONS_RENDER_CHART, {
+        slice_id: chartId,
+        has_err: true,
+        error_details: error.toString(),
+        start_offset: this.renderStartTime,
+        ts: new Date().getTime(),
+        duration: Logger.getTimestamp() - this.renderStartTime,
+      });
+    }
   }
 
   renderTooltip() {
@@ -177,20 +166,45 @@ class ChartRenderer extends React.Component {
       chartAlert,
       chartStatus,
       vizType,
+      chartId,
     } = this.props;
 
-    const isLoading = chartStatus === 'loading';
+    // Skip chart rendering
+    if (chartStatus === 'loading' || !!chartAlert || chartStatus === null) {
+      return null;
+    }
 
-    const skipChartRendering = isLoading || !!chartAlert;
     this.renderStartTime = Logger.getTimestamp();
+
+    const {
+      width,
+      height,
+      annotationData,
+      datasource,
+      initialValues,
+      formData,
+      queryResponse,
+      setControlValue,
+    } = this.props;
 
     return (
       <React.Fragment>
         {this.renderTooltip()}
         <SuperChart
+          id={`chart-id-${chartId}`}
           className={`${snakeCase(vizType)}`}
           chartType={vizType}
-          chartProps={skipChartRendering ? null : this.prepareChartProps()}
+          width={width}
+          height={height}
+          annotationData={annotationData}
+          datasource={datasource}
+          filters={initialValues}
+          formData={formData}
+          payload={queryResponse}
+          onAddFilter={this.handleAddFilter}
+          onError={this.handleRenderFailure}
+          setControlValue={setControlValue}
+          setTooltip={this.setTooltip}
           onRenderSuccess={this.handleRenderSuccess}
           onRenderFailure={this.handleRenderFailure}
         />

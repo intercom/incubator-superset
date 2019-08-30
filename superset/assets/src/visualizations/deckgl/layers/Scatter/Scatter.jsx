@@ -17,15 +17,33 @@
  * under the License.
  */
 import { ScatterplotLayer } from 'deck.gl';
+import React from 'react';
+import { t } from '@superset-ui/translation';
 import { commonLayerProps } from '../common';
 import { createCategoricalDeckGLComponent } from '../../factory';
+import TooltipRow from '../../TooltipRow';
 import { unitToRadius } from '../../../../modules/geo';
 
 function getPoints(data) {
   return data.map(d => d.position);
 }
 
-export function getLayer(fd, payload, onAddFilter, setTooltip) {
+function setTooltipContent(formData) {
+  return o => (
+    <div className="deckgl-tooltip">
+      <TooltipRow label={`${t('Longitude and Latitude')}: `} value={`${o.object.position[0]}, ${o.object.position[1]}`} />
+      {
+        o.object.cat_color && <TooltipRow label={`${t('Category')}: `} value={`${o.object.cat_color}`} />
+      }
+      {
+        o.object.metric && <TooltipRow label={`${formData.point_radius_fixed.value.label}: `} value={`${o.object.metric}`} />
+      }
+    </div>
+  );
+}
+
+export function getLayer(formData, payload, onAddFilter, setTooltip) {
+  const fd = formData;
   const dataWithRadius = payload.data.features.map((d) => {
     let radius = unitToRadius(fd.point_unit, d.radius) || 10;
     if (fd.multiplier) {
@@ -46,7 +64,7 @@ export function getLayer(fd, payload, onAddFilter, setTooltip) {
     radiusMinPixels: fd.min_radius || null,
     radiusMaxPixels: fd.max_radius || null,
     outline: false,
-    ...commonLayerProps(fd, setTooltip),
+    ...commonLayerProps(fd, setTooltip, setTooltipContent(fd)),
   });
 }
 

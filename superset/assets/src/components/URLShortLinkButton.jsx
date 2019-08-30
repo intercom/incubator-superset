@@ -29,6 +29,7 @@ const propTypes = {
   emailSubject: PropTypes.string,
   emailContent: PropTypes.string,
   addDangerToast: PropTypes.func.isRequired,
+  placement: PropTypes.oneOf(['right', 'left', 'top', 'bottom']),
 };
 
 class URLShortLinkButton extends React.Component {
@@ -73,12 +74,12 @@ class URLShortLinkButton extends React.Component {
         trigger="click"
         rootClose
         shouldUpdatePosition
-        placement="left"
+        placement={this.props.placement}
         onEnter={this.getCopyUrl}
         overlay={this.renderPopover()}
       >
-        <span className="btn btn-default btn-sm" data-test="short-link-button">
-          <i className="fa fa-link" />&nbsp;
+        <span className="short-link-trigger btn btn-default btn-sm" data-test="short-link-button">
+          <i className="short-link-trigger fa fa-link" />&nbsp;
         </span>
       </OverlayTrigger>
     );
@@ -87,6 +88,7 @@ class URLShortLinkButton extends React.Component {
 
 URLShortLinkButton.defaultProps = {
   url: window.location.href.substring(window.location.origin.length),
+  placement: 'left',
   emailSubject: '',
   emailContent: '',
 };

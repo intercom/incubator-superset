@@ -21,16 +21,27 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { ScreenGridLayer } from 'deck.gl';
+import { t } from '@superset-ui/translation';
 import AnimatableDeckGLContainer from '../../AnimatableDeckGLContainer';
 import { getPlaySliderParams } from '../../../../modules/time';
 import sandboxedEval from '../../../../modules/sandbox';
 import { commonLayerProps, fitViewport } from '../common';
+import TooltipRow from '../../TooltipRow';
 
 function getPoints(data) {
   return data.map(d => d.position);
 }
 
-export function getLayer(formData, payload, onAddFilter, setTooltip, filters) {
+function setTooltipContent(o) {
+  return (
+    <div className="deckgl-tooltip">
+      <TooltipRow label={`${t('Longitude and Latitude')}: `} value={`${o.object.position[0]}, ${o.object.position[1]}`} />
+      <TooltipRow label={`${t('Weight')}: `} value={`${o.object.weight}`} />
+    </div>
+  );
+}
+
+export function getLayer(formData, payload, onAddFilter, setTooltip, selected, onSelect, filters) {
   const fd = formData;
   const c = fd.color_picker;
   let data = payload.data.features.map(d => ({
@@ -61,7 +72,7 @@ export function getLayer(formData, payload, onAddFilter, setTooltip, filters) {
     maxColor: [c.r, c.g, c.b, 255 * c.a],
     outline: false,
     getWeight: d => d.weight || 0,
-    ...commonLayerProps(fd, setTooltip),
+    ...commonLayerProps(fd, setTooltip, setTooltipContent),
   });
 }
 
