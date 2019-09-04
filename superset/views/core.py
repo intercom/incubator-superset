@@ -69,7 +69,7 @@ from superset.exceptions import (
 from superset.jinja_context import get_template_processor
 from superset.legacy import update_time_range
 import superset.models.core as models
-from superset.models.sql_lab import Query
+from superset.models.sql_lab import Query, SavedQuery
 from superset.models.user_attributes import UserAttribute
 from superset.sql_parse import ParsedQuery
 from superset.sql_validators import get_validator_by_name
@@ -2083,6 +2083,56 @@ class Superset(BaseSupersetView):
             session.commit()
             return json_success(json.dumps({"published": dash.published}))
 
+    @api
+    @expose('/save_query/', methods=['POST'])
+    def save_query(self):
+        """Save SQL Lab query"""
+        data = json.loads(request.form.get('data'))
+        session = db.session()
+        saved_query = None
+
+        # special case for queries with a label starting with *
+        if data['label'].startswith('*'):
+            # check for an existing query with the same label
+            saved_query = session.query(SavedQuery).filter_by(label=data['label'], user_id=g.user.get_id()).order_by(SavedQuery.changed_on.desc()).first()
+
+        if saved_query:
+            # update existing query
+            saved_query.db_id = data.get('db_id')
+            saved_query.schema = data.get('schema')
+            saved_query.description = data.get('description')
+            saved_query.sql = data.get('sql')
+            session.commit()
+            message = 'Edited Row {0}'.format(saved_query.id)
+        else:
+            # save as a new query
+            saved_query = SavedQuery(
+                user_id=int(g.user.get_id()),
+                label=data.get('label'),
+                db_id=int(data.get('db_id')),
+                schema=data.get('schema'),
+                description=data.get('description'),
+                sql=data.get('sql'))
+            session.add(saved_query)
+            session.flush()
+            db.session.commit()
+            message = 'Added Row {0}'.format(saved_query.id)
+
+        json_result = {
+            'item': {
+                'db_id': saved_query.db_id,
+                'schema': saved_query.schema,
+                'label': saved_query.label,
+                'description': saved_query.description,
+                'sql': saved_query.sql,
+                'id': saved_query.id
+            },
+            'message': 'Edited Row',
+            'severity': 'success'
+        }
+        session.close()
+        return json_success(json.dumps(json_result))
+
     @has_access
     @expose("/dashboard/<dashboard_id>/")
     def dashboard(self, dashboard_id):
@@ -2846,6 +2896,32 @@ class Superset(BaseSupersetView):
     @expose("/sqllab")
     def sqllab(self):
         """SQL Editor"""
+        default_db_id = config.get('SQLLAB_DEFAULT_DBID')
+
+        # Check the fallback list and select the first db that
+        # the user has access to
+        for db_id in config.get('SQLLAB_DEFAULT_DBID_FALLBACK', [config.get('SQLLAB_DEFAULT_DBID')]):
+            default_db = (
+                db.session
+                .query(models.Database)
+                .filter_by(id=db_id)
+                .first()
+            )
+            if security_manager.database_access(default_db):
+                default_db_id = db_id
+                break
+
+        if not default_db_id:
+            databases = (
+                db.session
+                .query(models.Database)
+                .all()
+            )
+            for database in databases:
+                if security_manager.database_access(db.id):
+                    default_db_id = db.id
+                    break
+
         d = {
             "defaultDbId": config.get("SQLLAB_DEFAULT_DBID"),
             "common": self.common_bootstrap_payload(),

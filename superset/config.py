@@ -426,6 +426,10 @@ SQLLAB_VALIDATION_TIMEOUT = 10
 # SQLLAB_DEFAULT_DBID
 SQLLAB_DEFAULT_DBID = None
 
+# Fallback list of default DB IDs. The first one that the user has access
+# to will be selected as the user's default.
+SQLLAB_DEFAULT_DBID_FALLBACK = []
+
 # The MAX duration (in seconds) a query can run for before being killed
 # by celery.
 SQLLAB_ASYNC_TIME_LIMIT_SEC = 60 * 60 * 6

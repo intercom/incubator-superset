@@ -53,6 +53,7 @@ export const QUERY_EDITOR_SET_SELECTED_TEXT = 'QUERY_EDITOR_SET_SELECTED_TEXT';
 export const QUERY_EDITOR_PERSIST_HEIGHT = 'QUERY_EDITOR_PERSIST_HEIGHT';
 
 export const SET_DATABASES = 'SET_DATABASES';
+export const SET_DEFAULT_DB_ID = 'SET_DEFAULT_DB_ID';
 export const SET_ACTIVE_QUERY_EDITOR = 'SET_ACTIVE_QUERY_EDITOR';
 export const SET_ACTIVE_SOUTHPANE_TAB = 'SET_ACTIVE_SOUTHPANE_TAB';
 export const REFRESH_QUERIES = 'REFRESH_QUERIES';
@@ -101,11 +102,14 @@ export function queryValidationFailed(query, message, error) {
 export function saveQuery(query) {
   return dispatch =>
     SupersetClient.post({
-      endpoint: '/savedqueryviewapi/api/create',
+      endpoint: '/superset/save_query/',
       postPayload: query,
       stringify: false,
     })
-      .then(() => dispatch(addSuccessToast(t('Your query was saved'))))
+      .then(() => {
+        dispatch(queryEditorSetTitle(query.queryEditor, query.label));
+        dispatch(addSuccessToast(t('Your query was saved')))
+      })
       .catch(() => dispatch(addDangerToast(t('Your query could not be saved'))));
 }
 
@@ -269,6 +273,10 @@ export function postStopQuery(query) {
 
 export function setDatabases(databases) {
   return { type: SET_DATABASES, databases };
+}
+
+export function setDefaultDbId(db_id) {
+  return { type: SET_DEFAULT_DB_ID, db_id };
 }
 
 export function addQueryEditor(queryEditor) {

@@ -61,6 +61,7 @@ class SaveQuery extends React.PureComponent {
       db_id: this.props.dbId,
       schema: this.props.schema,
       sql: this.props.sql,
+      queryEditor: this.props.queryEditor,
     };
     this.props.onSave(query);
     this.saveModal.close();

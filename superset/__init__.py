@@ -188,6 +188,8 @@ for middleware in app.config.get("ADDITIONAL_MIDDLEWARE"):
 
 
 class MyIndexView(IndexView):
+    default_view = "index"
+    
     @expose("/")
     def index(self):
         return redirect("/superset/welcome")
