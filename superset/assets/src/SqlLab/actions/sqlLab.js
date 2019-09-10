@@ -105,6 +105,7 @@ export function saveQuery(query) {
       postPayload: query,
       stringify: false,
     })
+      .then(() => dispatch(queryEditorSetTitle(query.queryEditor, query.label)))
       .then(() => dispatch(addSuccessToast(t('Your query was saved'))))
       .catch(() => dispatch(addDangerToast(t('Your query could not be saved'))));
 }
