@@ -14,15 +14,15 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import unittest
+import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-import unittest
-from unittest.mock import patch
-import uuid
+from unittest.mock import Mock, patch
 
+import numpy
 from flask import Flask
 from flask_caching import Cache
-import numpy
 from sqlalchemy.exc import ArgumentError
 
 from superset import app, db, security_manager
@@ -32,6 +32,7 @@ from superset.utils.core import (
     base_json_conv,
     convert_legacy_filters_into_adhoc,
     datetime_f,
+    format_timedelta,
     get_or_create_db,
     get_since_until,
     get_stacktrace,
@@ -45,10 +46,13 @@ from superset.utils.core import (
     parse_js_uri_path_item,
     parse_past_timedelta,
     setup_cache,
+    split,
+    TimeRangeEndpoint,
     validate_json,
     zlib_compress,
-    zlib_decompress_to_string,
+    zlib_decompress,
 )
+from superset.views.utils import get_time_range_endpoints
 
 
 def mock_parse_human_datetime(s):
@@ -119,29 +123,31 @@ class UtilsTestCase(unittest.TestCase):
         assert isinstance(base_json_conv(set([1])), list) is True
         assert isinstance(base_json_conv(Decimal("1.0")), float) is True
         assert isinstance(base_json_conv(uuid.uuid4()), str) is True
+        assert isinstance(base_json_conv(timedelta(0)), str) is True
 
     @patch("superset.utils.core.datetime")
     def test_parse_human_timedelta(self, mock_datetime):
         mock_datetime.now.return_value = datetime(2019, 4, 1)
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
-        self.assertEquals(parse_human_timedelta("now"), timedelta(0))
-        self.assertEquals(parse_human_timedelta("1 year"), timedelta(366))
-        self.assertEquals(parse_human_timedelta("-1 year"), timedelta(-365))
+        self.assertEqual(parse_human_timedelta("now"), timedelta(0))
+        self.assertEqual(parse_human_timedelta("1 year"), timedelta(366))
+        self.assertEqual(parse_human_timedelta("-1 year"), timedelta(-365))
+        self.assertEqual(parse_human_timedelta(None), timedelta(0))
 
     @patch("superset.utils.core.datetime")
     def test_parse_past_timedelta(self, mock_datetime):
         mock_datetime.now.return_value = datetime(2019, 4, 1)
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
-        self.assertEquals(parse_past_timedelta("1 year"), timedelta(365))
-        self.assertEquals(parse_past_timedelta("-1 year"), timedelta(365))
-        self.assertEquals(parse_past_timedelta("52 weeks"), timedelta(364))
-        self.assertEquals(parse_past_timedelta("1 month"), timedelta(31))
+        self.assertEqual(parse_past_timedelta("1 year"), timedelta(365))
+        self.assertEqual(parse_past_timedelta("-1 year"), timedelta(365))
+        self.assertEqual(parse_past_timedelta("52 weeks"), timedelta(364))
+        self.assertEqual(parse_past_timedelta("1 month"), timedelta(31))
 
     def test_zlib_compression(self):
         json_str = '{"test": 1}'
         blob = zlib_compress(json_str)
-        got_str = zlib_decompress_to_string(blob)
-        self.assertEquals(json_str, got_str)
+        got_str = zlib_decompress(blob)
+        self.assertEqual(json_str, got_str)
 
     @patch("superset.utils.core.to_adhoc", mock_to_adhoc)
     def test_merge_extra_filters(self):
@@ -149,12 +155,12 @@ class UtilsTestCase(unittest.TestCase):
         form_data = {"A": 1, "B": 2, "c": "test"}
         expected = {"A": 1, "B": 2, "c": "test"}
         merge_extra_filters(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
         # empty extra_filters
         form_data = {"A": 1, "B": 2, "c": "test", "extra_filters": []}
         expected = {"A": 1, "B": 2, "c": "test", "adhoc_filters": []}
         merge_extra_filters(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
         # copy over extra filters into empty filters
         form_data = {
             "extra_filters": [
@@ -181,7 +187,7 @@ class UtilsTestCase(unittest.TestCase):
             ]
         }
         merge_extra_filters(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
         # adds extra filters to existing filters
         form_data = {
             "extra_filters": [
@@ -224,7 +230,7 @@ class UtilsTestCase(unittest.TestCase):
             ]
         }
         merge_extra_filters(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
         # adds extra filters to existing filters and sets time options
         form_data = {
             "extra_filters": [
@@ -253,7 +259,7 @@ class UtilsTestCase(unittest.TestCase):
             "druid_time_origin": "now",
         }
         merge_extra_filters(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
 
     @patch("superset.utils.core.to_adhoc", mock_to_adhoc)
     def test_merge_extra_filters_ignores_empty_filters(self):
@@ -265,7 +271,7 @@ class UtilsTestCase(unittest.TestCase):
         }
         expected = {"adhoc_filters": []}
         merge_extra_filters(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
 
     @patch("superset.utils.core.to_adhoc", mock_to_adhoc)
     def test_merge_extra_filters_ignores_nones(self):
@@ -293,7 +299,7 @@ class UtilsTestCase(unittest.TestCase):
             ]
         }
         merge_extra_filters(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
 
     @patch("superset.utils.core.to_adhoc", mock_to_adhoc)
     def test_merge_extra_filters_ignores_equal_filters(self):
@@ -301,6 +307,7 @@ class UtilsTestCase(unittest.TestCase):
             "extra_filters": [
                 {"col": "a", "op": "in", "val": "someval"},
                 {"col": "B", "op": "==", "val": ["c1", "c2"]},
+                {"col": "c", "op": "in", "val": ["c1", 1, None]},
             ],
             "adhoc_filters": [
                 {
@@ -316,6 +323,13 @@ class UtilsTestCase(unittest.TestCase):
                     "expressionType": "SIMPLE",
                     "operator": "==",
                     "subject": "B",
+                },
+                {
+                    "clause": "WHERE",
+                    "comparator": ["c1", 1, None],
+                    "expressionType": "SIMPLE",
+                    "operator": "in",
+                    "subject": "c",
                 },
             ],
         }
@@ -335,10 +349,17 @@ class UtilsTestCase(unittest.TestCase):
                     "operator": "==",
                     "subject": "B",
                 },
+                {
+                    "clause": "WHERE",
+                    "comparator": ["c1", 1, None],
+                    "expressionType": "SIMPLE",
+                    "operator": "in",
+                    "subject": "c",
+                },
             ]
         }
         merge_extra_filters(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
 
     @patch("superset.utils.core.to_adhoc", mock_to_adhoc)
     def test_merge_extra_filters_merges_different_val_types(self):
@@ -390,7 +411,7 @@ class UtilsTestCase(unittest.TestCase):
             ]
         }
         merge_extra_filters(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
         form_data = {
             "extra_filters": [
                 {"col": "a", "op": "in", "val": "someval"},
@@ -439,7 +460,7 @@ class UtilsTestCase(unittest.TestCase):
             ]
         }
         merge_extra_filters(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
 
     @patch("superset.utils.core.to_adhoc", mock_to_adhoc)
     def test_merge_extra_filters_adds_unequal_lists(self):
@@ -498,7 +519,7 @@ class UtilsTestCase(unittest.TestCase):
             ]
         }
         merge_extra_filters(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
 
     def test_merge_request_params(self):
         form_data = {"since": "2000", "until": "now"}
@@ -509,15 +530,28 @@ class UtilsTestCase(unittest.TestCase):
         self.assertNotIn("form_data", form_data.keys())
 
     def test_datetime_f(self):
-        self.assertEquals(
+        self.assertEqual(
             datetime_f(datetime(1990, 9, 21, 19, 11, 19, 626096)),
             "<nobr>1990-09-21T19:11:19.626096</nobr>",
         )
-        self.assertEquals(len(datetime_f(datetime.now())), 28)
-        self.assertEquals(datetime_f(None), "<nobr>None</nobr>")
+        self.assertEqual(len(datetime_f(datetime.now())), 28)
+        self.assertEqual(datetime_f(None), "<nobr>None</nobr>")
         iso = datetime.now().isoformat()[:10].split("-")
         [a, b, c] = [int(v) for v in iso]
-        self.assertEquals(datetime_f(datetime(a, b, c)), "<nobr>00:00:00</nobr>")
+        self.assertEqual(datetime_f(datetime(a, b, c)), "<nobr>00:00:00</nobr>")
+
+    def test_format_timedelta(self):
+        self.assertEqual(format_timedelta(timedelta(0)), "0:00:00")
+        self.assertEqual(format_timedelta(timedelta(days=1)), "1 day, 0:00:00")
+        self.assertEqual(format_timedelta(timedelta(minutes=-6)), "-0:06:00")
+        self.assertEqual(
+            format_timedelta(timedelta(0) - timedelta(days=1, hours=5, minutes=6)),
+            "-1 day, 5:06:00",
+        )
+        self.assertEqual(
+            format_timedelta(timedelta(0) - timedelta(days=16, hours=4, minutes=3)),
+            "-16 days, 4:03:00",
+        )
 
     def test_json_encoded_obj(self):
         obj = {"a": 5, "b": ["a", "g", 5]}
@@ -526,7 +560,7 @@ class UtilsTestCase(unittest.TestCase):
         resp = jsonObj.process_bind_param(obj, "dialect")
         self.assertIn('"a": 5', resp)
         self.assertIn('"b": ["a", "g", 5]', resp)
-        self.assertEquals(jsonObj.process_result_value(val, "dialect"), obj)
+        self.assertEqual(jsonObj.process_result_value(val, "dialect"), obj)
 
     def test_validate_json(self):
         invalid = '{"a": 5, "b": [1, 5, ["g", "h]]}'
@@ -543,8 +577,8 @@ class UtilsTestCase(unittest.TestCase):
 
         result1 = test_function(1, 2, 3)
         result2 = test_function(1, 2, 3)
-        self.assertEquals(result1, result2)
-        self.assertEquals(watcher["val"], 1)
+        self.assertEqual(result1, result2)
+        self.assertEqual(watcher["val"], 1)
 
     def test_memoized_on_methods(self):
         class test_class:
@@ -560,10 +594,10 @@ class UtilsTestCase(unittest.TestCase):
         instance = test_class(5)
         result1 = instance.test_method(1, 2, 3)
         result2 = instance.test_method(1, 2, 3)
-        self.assertEquals(result1, result2)
-        self.assertEquals(instance.watcher, 1)
+        self.assertEqual(result1, result2)
+        self.assertEqual(instance.watcher, 1)
         instance.num = 10
-        self.assertEquals(result2, instance.test_method(1, 2, 3))
+        self.assertEqual(result2, instance.test_method(1, 2, 3))
 
     def test_memoized_on_methods_with_watches(self):
         class test_class:
@@ -580,13 +614,13 @@ class UtilsTestCase(unittest.TestCase):
         instance = test_class(3, 12)
         result1 = instance.test_method(1, 2, 3)
         result2 = instance.test_method(1, 2, 3)
-        self.assertEquals(result1, result2)
-        self.assertEquals(instance.watcher, 1)
+        self.assertEqual(result1, result2)
+        self.assertEqual(instance.watcher, 1)
         result3 = instance.test_method(2, 3, 4)
-        self.assertEquals(instance.watcher, 2)
+        self.assertEqual(instance.watcher, 2)
         result4 = instance.test_method(2, 3, 4)
-        self.assertEquals(instance.watcher, 2)
-        self.assertEquals(result3, result4)
+        self.assertEqual(instance.watcher, 2)
+        self.assertEqual(result3, result4)
         self.assertNotEqual(result3, result1)
         instance.x = 1
         result5 = instance.test_method(2, 3, 4)
@@ -676,7 +710,7 @@ class UtilsTestCase(unittest.TestCase):
             ]
         }
         convert_legacy_filters_into_adhoc(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
 
     @patch("superset.utils.core.to_adhoc", mock_to_adhoc)
     def test_convert_legacy_filters_into_adhoc_filters(self):
@@ -693,7 +727,7 @@ class UtilsTestCase(unittest.TestCase):
             ]
         }
         convert_legacy_filters_into_adhoc(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
 
     @patch("superset.utils.core.to_adhoc", mock_to_adhoc)
     def test_convert_legacy_filters_into_adhoc_having(self):
@@ -708,7 +742,7 @@ class UtilsTestCase(unittest.TestCase):
             ]
         }
         convert_legacy_filters_into_adhoc(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
 
     @patch("superset.utils.core.to_adhoc", mock_to_adhoc)
     def test_convert_legacy_filters_into_adhoc_having_filters(self):
@@ -725,7 +759,7 @@ class UtilsTestCase(unittest.TestCase):
             ]
         }
         convert_legacy_filters_into_adhoc(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
 
     @patch("superset.utils.core.to_adhoc", mock_to_adhoc)
     def test_convert_legacy_filters_into_adhoc_present_and_empty(self):
@@ -736,7 +770,7 @@ class UtilsTestCase(unittest.TestCase):
             ]
         }
         convert_legacy_filters_into_adhoc(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
 
     @patch("superset.utils.core.to_adhoc", mock_to_adhoc)
     def test_convert_legacy_filters_into_adhoc_present_and_nonempty(self):
@@ -754,7 +788,7 @@ class UtilsTestCase(unittest.TestCase):
             ]
         }
         convert_legacy_filters_into_adhoc(form_data)
-        self.assertEquals(form_data, expected)
+        self.assertEqual(form_data, expected)
 
     def test_parse_js_uri_path_items_eval_undefined(self):
         self.assertIsNone(parse_js_uri_path_item("undefined", eval_undefined=True))
@@ -817,6 +851,20 @@ class UtilsTestCase(unittest.TestCase):
                 stacktrace = get_stacktrace()
                 assert stacktrace is None
 
+    def test_split(self):
+        self.assertEqual(list(split("a b")), ["a", "b"])
+        self.assertEqual(list(split("a,b", delimiter=",")), ["a", "b"])
+        self.assertEqual(list(split("a,(b,a)", delimiter=",")), ["a", "(b,a)"])
+        self.assertEqual(
+            list(split('a,(b,a),"foo , bar"', delimiter=",")),
+            ["a", "(b,a)", '"foo , bar"'],
+        )
+        self.assertEqual(
+            list(split("a,'b,c'", delimiter=",", quote="'")), ["a", "'b,c'"]
+        )
+        self.assertEqual(list(split('a "b c"')), ["a", '"b c"'])
+        self.assertEqual(list(split(r'a "b \" c"')), ["a", r'"b \" c"'])
+
     def test_get_or_create_db(self):
         get_or_create_db("test_db", "sqlite:///superset.db")
         database = db.session.query(Database).filter_by(database_name="test_db").one()
@@ -835,3 +883,55 @@ class UtilsTestCase(unittest.TestCase):
     def test_get_or_create_db_invalid_uri(self):
         with self.assertRaises(ArgumentError):
             get_or_create_db("test_db", "yoursql:superset.db/()")
+
+    def test_get_time_range_endpoints(self):
+        self.assertEqual(
+            get_time_range_endpoints(form_data={}),
+            (TimeRangeEndpoint.INCLUSIVE, TimeRangeEndpoint.EXCLUSIVE),
+        )
+
+        self.assertEqual(
+            get_time_range_endpoints(
+                form_data={"time_range_endpoints": ["inclusive", "inclusive"]}
+            ),
+            (TimeRangeEndpoint.INCLUSIVE, TimeRangeEndpoint.INCLUSIVE),
+        )
+
+        self.assertEqual(
+            get_time_range_endpoints(form_data={"datasource": "1_druid"}),
+            (TimeRangeEndpoint.INCLUSIVE, TimeRangeEndpoint.EXCLUSIVE),
+        )
+
+        slc = Mock()
+        slc.datasource.database.get_extra.return_value = {}
+
+        self.assertEqual(
+            get_time_range_endpoints(form_data={"datasource": "1__table"}, slc=slc),
+            (TimeRangeEndpoint.UNKNOWN, TimeRangeEndpoint.INCLUSIVE),
+        )
+
+        slc.datasource.database.get_extra.return_value = {
+            "time_range_endpoints": ["inclusive", "inclusive"]
+        }
+
+        self.assertEqual(
+            get_time_range_endpoints(form_data={"datasource": "1__table"}, slc=slc),
+            (TimeRangeEndpoint.INCLUSIVE, TimeRangeEndpoint.INCLUSIVE),
+        )
+
+        self.assertIsNone(get_time_range_endpoints(form_data={}, slc=slc))
+
+        with app.app_context():
+            app.config["SIP_15_GRACE_PERIOD_END"] = date.today() + timedelta(days=1)
+
+            self.assertEqual(
+                get_time_range_endpoints(form_data={"datasource": "1__table"}, slc=slc),
+                (TimeRangeEndpoint.INCLUSIVE, TimeRangeEndpoint.INCLUSIVE),
+            )
+
+            app.config["SIP_15_GRACE_PERIOD_END"] = date.today()
+
+            self.assertEqual(
+                get_time_range_endpoints(form_data={"datasource": "1__table"}, slc=slc),
+                (TimeRangeEndpoint.INCLUSIVE, TimeRangeEndpoint.EXCLUSIVE),
+            )
