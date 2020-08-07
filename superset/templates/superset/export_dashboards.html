@@ -16,7 +16,7 @@
   specific language governing permissions and limitations
   under the License.
 #}
-<script>
+<script nonce="{{ csp_nonce() }}">
     window.onload = function() {
 
         // See issue #7353, window.open fails
@@ -27,7 +27,7 @@
         a.click();
         document.body.removeChild(a);
 
-        window.location = '{{ dashboards_url }}';    
+        window.location = '{{ dashboards_url }}';
 
     };
 </script>

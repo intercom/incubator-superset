@@ -61,7 +61,7 @@ function toDevHTML(originalHtml) {
             .map(chunkFilePath =>
               assetType === 'css'
                 ? `<link rel="stylesheet" type="text/css" href="${chunkFilePath}" />`
-                : `<script src="${chunkFilePath}"></script>`,
+                : `<script src="${chunkFilePath}" nonce="{{ csp_nonce() }}"></script>`,
             )
             .join(
               '\n  ',
