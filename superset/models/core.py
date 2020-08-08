@@ -399,11 +399,15 @@ class Database(
                 if mutator:
                     mutator(df)
 
+                logger.info(f"Logging query: {sql}")
+
                 for k, v in df.dtypes.items():
                     if v.type == numpy.object_ and needs_conversion(df[k]):
-                            df[k] = df[k].apply(utils.json_dumps_w_dates)
-                    if v.type == numpy.object_ and needs_cleansing(df[k]):
-                            df[k] = df[k].apply(cleanse_obj)
+                        df[k] = df[k].apply(utils.json_dumps_w_dates)
+                    if needs_cleansing(df[k]):
+                        logger.info(f"Query results need cleansing")
+                        df[k] = df[k].apply(cleanse_obj)
+                df.to_json('/app/tmp/jason_results.json', orient="records")
                 return df
 
     def compile_sqla_query(self, qry: Select, schema: Optional[str] = None) -> str:
