@@ -19,7 +19,6 @@
 import json
 import logging
 import textwrap
-from bs4 import BeautifulSoup
 from contextlib import closing
 from copy import deepcopy
 from datetime import datetime
@@ -348,34 +347,12 @@ class Database(
         def needs_conversion(df_series: pd.Series) -> bool:
             return not df_series.empty and isinstance(df_series[0], (list, dict))
 
-        def _log_query(sql: str) -> None:
-            if log_query:
-                log_query(engine.url, sql, schema, username, __name__, security_manager)
-
         def needs_cleansing(df_series: pd.Series) -> bool:
             return not df_series.empty and isinstance(df_series[0], str)
 
-        def cleanse_obj(obj: Any) -> Any:
-            """
-            Cleanse a string of any potentially malicious
-            HTML tags . If any are found, log the
-            result.
-            """
-            cleanse_tags = [
-                'script',
-                'img'
-            ]
-            if isinstance(obj, str):
-                parsed_str = BeautifulSoup(obj, "lxml")
-                for tag in cleanse_tags:
-                    bad_elements = [t.extract() for t in parsed_str.find_all(tag)]
-                    if bad_elements:
-                        logger.critical(
-                            f"Found potentially malicious '{tag}' "
-                            f"tag(s) in query result set: {bad_elements}"
-                        )
-                return parsed_str.get_text()
-            return obj
+        def _log_query(sql: str) -> None:
+            if log_query:
+                log_query(engine.url, sql, schema, username, __name__, security_manager)
 
         with closing(engine.raw_connection()) as conn:
             with closing(conn.cursor()) as cursor:
@@ -399,15 +376,11 @@ class Database(
                 if mutator:
                     mutator(df)
 
-                logger.info(f"Logging query: {sql}")
-
                 for k, v in df.dtypes.items():
                     if v.type == numpy.object_ and needs_conversion(df[k]):
                         df[k] = df[k].apply(utils.json_dumps_w_dates)
                     if needs_cleansing(df[k]):
-                        logger.info(f"Query results need cleansing")
-                        df[k] = df[k].apply(cleanse_obj)
-                df.to_json('/app/tmp/jason_results.json', orient="records")
+                        df[k] = df[k].apply(utils.cleanse_obj)
                 return df
 
     def compile_sqla_query(self, qry: Select, schema: Optional[str] = None) -> str:

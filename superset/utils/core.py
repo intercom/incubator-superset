@@ -29,6 +29,7 @@ import tempfile
 import traceback
 import uuid
 import zlib
+from bs4 import BeautifulSoup
 from datetime import date, datetime, time, timedelta
 from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
@@ -99,6 +100,29 @@ try:
 
 except NameError:
     pass
+
+
+def cleanse_obj(obj: Any) -> Any:
+    """
+    Cleanse a string of any potentially malicious
+    HTML tags . If any are found, log the
+    result.
+    """
+    cleanse_tags = [
+        'script',
+        'img'
+    ]
+    if isinstance(obj, str):
+        parsed_str = BeautifulSoup(obj, "lxml")
+        for tag in cleanse_tags:
+            bad_elements = [t.extract() for t in parsed_str.find_all(tag)]
+            if bad_elements:
+                logger.critical(
+                    f"Found potentially malicious '{tag}' "
+                    f"tag(s) in query result set: {bad_elements}"
+                )
+        return parsed_str.get_text()
+    return obj
 
 
 def flasher(msg, severity=None):
