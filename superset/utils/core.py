@@ -112,7 +112,7 @@ def escape_html(obj: Any) -> Any:
     """
     if isinstance(obj, str):
         html_escaped_str = html.escape(obj)
-        return f"{html_escaped_str} BLAHBLAHBLAHBLAHBLAH TEEEEEESTING..."
+        return html_escaped_str
     return obj
 
 
