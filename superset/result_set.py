@@ -60,12 +60,18 @@ def dedup(l: List[str], suffix: str = "__", case_sensitive: bool = True) -> List
 
 
 def stringify(obj: Any) -> str:
-    return json.dumps(obj, default=utils.json_iso_dttm_ser)
+    obj_str = json.dumps(obj, default=utils.json_iso_dttm_ser)
+    return utils.escape_html(obj_str)
 
 
 def stringify_values(array: np.ndarray) -> np.ndarray:
     vstringify: Callable = np.vectorize(stringify)
     return vstringify(array)
+
+
+def escape_html_values(array: np.ndarray) -> np.ndarray:
+    vescapify: Callable = np.vectorize(utils.escape_html)
+    return vescapify(array)
 
 
 class SupersetResultSet:
@@ -140,6 +146,16 @@ class SupersetResultSet:
                                 )
                         except Exception as e:
                             logger.exception(e)
+
+                elif pa.types.is_string(pa_data[i].type):
+                    # Patch for XSS security issue.
+                    # See: https://github.com/intercom/intercom/issues/182473
+                    logger.info(f"Attempting to escape HTML in column {column} of SQL Lab query.")
+                    try:
+                        html_escaped_arr = escape_html_values(array[column])
+                        pa_data[i] = pa.array(html_escaped_arr.tolist())
+                    except Exception as e:
+                        logger.exception(f"Failed to stringify values in superset/result_set.py: {e}")
 
         self.table = pa.Table.from_arrays(pa_data, names=column_names)
         self._type_dict: Dict[str, Any] = {}

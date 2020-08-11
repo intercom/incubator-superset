@@ -20,6 +20,7 @@ import decimal
 import errno
 import functools
 import hashlib
+import html
 import json
 import logging
 import os
@@ -99,6 +100,20 @@ try:
 
 except NameError:
     pass
+
+
+def escape_html(obj: Any) -> Any:
+    """
+    Escape the HTML characters in the
+    object, in case it is a string.
+
+    NOTE: This is a patch for the XSS security issue.
+    See: https://github.com/intercom/intercom/issues/182473
+    """
+    if isinstance(obj, str):
+        html_escaped_str = html.escape(obj)
+        return html_escaped_str
+    return obj
 
 
 def flasher(msg, severity=None):
