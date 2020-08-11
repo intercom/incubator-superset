@@ -20,6 +20,7 @@ import decimal
 import errno
 import functools
 import hashlib
+import html
 import json
 import logging
 import os
@@ -29,7 +30,6 @@ import tempfile
 import traceback
 import uuid
 import zlib
-from bs4 import BeautifulSoup
 from datetime import date, datetime, time, timedelta
 from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
@@ -102,26 +102,17 @@ except NameError:
     pass
 
 
-def cleanse_obj(obj: Any) -> Any:
+def escape_html(obj: Any) -> Any:
     """
-    Cleanse a string of any potentially malicious
-    HTML tags . If any are found, log the
-    result.
+    Escape the HTML characters in the
+    object, in case it is a string.
+
+    NOTE: This is a patch for the XSS security issue.
+    See: https://github.com/intercom/intercom/issues/182473
     """
-    cleanse_tags = [
-        'script',
-        'img'
-    ]
     if isinstance(obj, str):
-        parsed_str = BeautifulSoup(obj, "lxml")
-        for tag in cleanse_tags:
-            bad_elements = [t.extract() for t in parsed_str.find_all(tag)]
-            if bad_elements:
-                logger.critical(
-                    f"Found potentially malicious '{tag}' "
-                    f"tag(s) in query result set: {bad_elements}"
-                )
-        return parsed_str.get_text()
+        html_escaped_str = html.escape(obj)
+        return f"{html_escaped_str} BLAHBLAHBLAHBLAHBLAH TEEEEEESTING..."
     return obj
 
 

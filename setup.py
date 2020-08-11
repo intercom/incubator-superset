@@ -69,7 +69,6 @@ setup(
     install_requires=[
         "backoff>=1.8.0",
         "bleach>=3.0.2, <4.0.0",
-        "bs4",
         "celery>=4.3.0, <5.0.0, !=4.4.1",
         "click<8",
         "colorama",
@@ -87,7 +86,6 @@ setup(
         "gunicorn>=20.0.2, <20.1",
         "humanize",
         "isodate",
-        "lxml",
         "markdown>=3.0",
         "msgpack>=0.6.1, <0.7.0",
         "pandas>=0.25.3, <1.0",

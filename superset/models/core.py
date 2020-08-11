@@ -348,6 +348,8 @@ class Database(
             return not df_series.empty and isinstance(df_series[0], (list, dict))
 
         def needs_cleansing(df_series: pd.Series) -> bool:
+            # Patch for XSS security issue.
+            # See: https://github.com/intercom/intercom/issues/182473
             return not df_series.empty and isinstance(df_series[0], str)
 
         def _log_query(sql: str) -> None:
@@ -380,7 +382,10 @@ class Database(
                     if v.type == numpy.object_ and needs_conversion(df[k]):
                         df[k] = df[k].apply(utils.json_dumps_w_dates)
                     if needs_cleansing(df[k]):
-                        df[k] = df[k].apply(utils.cleanse_obj)
+                        # Patch for XSS security issue.
+                        # See: https://github.com/intercom/intercom/issues/182473
+                        logger.info(f"Attempting to escape HTML in column {k} of DB result set.")
+                        df[k] = df[k].apply(utils.escape_html)
                 return df
 
     def compile_sqla_query(self, qry: Select, schema: Optional[str] = None) -> str:
