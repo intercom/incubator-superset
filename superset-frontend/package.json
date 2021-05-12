@@ -170,7 +170,7 @@
     "redux-undo": "^1.0.0-beta9-9-7",
     "regenerator-runtime": "^0.13.5",
     "rison": "^0.1.1",
-    "shortid": "^2.2.6",
+    "shortid": "^2.2.16",
     "urijs": "^1.19.4",
     "use-query-params": "^1.1.9"
   },
